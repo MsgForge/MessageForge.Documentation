@@ -1,0 +1,17 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude Code local state
+.claude/.ralph-loop.local.md
+.claude/settings.local.json
+
+# Worktrees
+.worktrees/

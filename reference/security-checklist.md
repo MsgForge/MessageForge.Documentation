@@ -1,0 +1,104 @@
+# Security Checklist
+
+> Last audited: 2026-03-07 (Phase 6.4 security review)
+
+## Transport Security
+
+- [ ] All Go server endpoints behind TLS-terminating reverse proxy (Caddy/nginx/LB)
+- [ ] SSL Labs scan (PDF/screenshot) proving TLS 1.2+ enforcement
+- [ ] No outdated cipher suites
+- [x] Go server documented as requiring reverse proxy for TLS (`server.go`)
+
+## Penetration Testing
+
+- [ ] DAST scan reports (OWASP ZAP, Burp Suite, or Chimera)
+- [ ] Zero high-severity vulnerabilities (XSS, SQL injection, OS command injection)
+- [ ] False positives documented in supplementary report
+
+## Authentication — Go -> Salesforce
+
+- [x] HMAC-SHA256 on all Go -> Salesforce webhooks
+- [x] Signature in `X-Signature` HTTP header
+- [x] Constant-time comparison via `hmac.Equal()` in Go middleware
+- [ ] Shared secrets in Salesforce Protected Custom Metadata Types
+
+## Authentication — Salesforce -> Go
+
+- [x] OAuth 2.0 JWT Bearer Flow for server-to-server (`salesforce/auth.go`)
+- [x] Token refresh handled automatically (double-check locking, 90-min TTL)
+- [ ] X.509 certificate in Connected App
+
+## Request Validation
+
+- [x] HMAC middleware body size limit: 10 MB (`middleware.go`)
+- [x] Bot API handler body size limit: 1 MB (`handlers.go`)
+- [x] Constant-time HMAC comparison (`hmac.Equal`)
+- [x] CF Worker timing-safe comparison (no length leak)
+
+## Credential Storage
+
+- [x] No CRM credentials hardcoded in Go source
+- [x] All PostgreSQL credentials via environment variables
+- [ ] Bot tokens encrypted at rest in PostgreSQL
+- [x] MTProto session keys in PostgreSQL UNLOGGED tables, never transmitted to Salesforce
+- [ ] Salesforce secrets in Protected Custom Metadata Types (not Custom Settings)
+
+## Memory Safety
+
+- [x] sync.Pool buffers zeroed after use (`ingestion.go`) — prevents credential leakage
+- [x] No sensitive data in error messages returned to clients
+
+## Media Security
+
+- [ ] R2 bucket strictly private (no public access)
+- [x] Inbound media: HMAC-signed tokens with expiration at Cloudflare Worker edge
+- [x] Outbound media: Presigned URL generation enforces Content-Type binding
+- [ ] Presigned URL expiration capped to 60 minute maximum
+- [x] UUID object keys (prevent enumeration)
+
+## CORS Security
+
+- [x] CF Worker CORS restricted to Salesforce domains only (`*.lightning.force.com`, `*.visualforce.com`, `*.salesforce.com`)
+- [ ] R2 CORS policy configured for Salesforce instance domain (PUT, ETag exposure)
+- [ ] CSP Trusted Sites configured for R2 endpoint domain (`connect-src` directive)
+- [ ] CSP Trusted Sites configured for Centrifugo WebSocket domain
+- [ ] CSP Trusted Sites configured for Cloudflare Worker CDN domain
+
+## Centrifugo Security
+
+- [x] JWT tokens short-lived (15 min TTL)
+- [x] LWC refresh callback implemented (no stale connections)
+- [ ] Shared secret in Protected Custom Metadata Type (symmetric)
+- [ ] Or: Self-Signed Certificate HSM (asymmetric)
+- [x] Apex JWT generation uses Base64Url encoding (not standard Base64)
+
+## Data Pipeline Security
+
+- [x] Platform Event batching implemented (5-sec flush interval, 950 KB threshold)
+- [x] sync.Pool used for batch serialization buffers (prevents GC thrashing)
+- [x] `Message_Delivery_Status__e` Platform Event published on terminal outbound failures
+- [x] Exponential backoff for all external API retries
+
+## Telegram-Specific
+
+- [ ] Residential proxy pool for MTProto IP isolation
+- [ ] No automated `my.telegram.org` API ID registration
+- [x] Single corporate API ID used (config-driven)
+- [x] FloodWait handling via token bucket + backoff (`ratelimit.go`)
+- [x] Rate limiting middleware active for both MTProto and Bot API
+
+## MTProto 2FA
+
+- [x] SRP v6a flow implemented (`mtproto/client.go`)
+- [x] Auth state machine: OTP → 2FA → success
+- [x] Password never transmitted in plaintext
+
+## Audit Trail
+
+| Date | Finding | Status |
+|------|---------|--------|
+| 2026-03-07 | HMAC middleware missing body size limit | FIXED |
+| 2026-03-07 | sync.Pool buffers not zeroed | FIXED |
+| 2026-03-07 | CF Worker CORS open to all origins | FIXED |
+| 2026-03-07 | CF Worker timingSafeEqual length leak | FIXED |
+| 2026-03-07 | Go server no TLS | DOCUMENTED (reverse proxy required) |

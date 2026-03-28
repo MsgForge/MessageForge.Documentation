@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SF Messenger Plugin — ERD v9 (SVG)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #181c25;
+    --surface-hover: #1e2330;
+    --border: #2a3040;
+    --border-hi: #3a4560;
+    --text: #d0d4dc;
+    --text-dim: #717a8c;
+    --text-bright: #f0f2f6;
+    --header-bg: #1a2030;
+    --pk: #c49cff;
+    --fk: #ff9f43;
+    --uk: #6cc3f0;
+    --enc: #ff6b6b;
+    --md-line: #3fb950;
+    --lk-line: #58a6ff;
+    --txt-line: #6e7681;
+    --std-bg: #1a1a2e;
+    --meta-bg: #1a2520;
+    --config-bg: #201a1a;
+  }
+
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    cursor: grab;
+    user-select: none;
+  }
+  body.dragging { cursor: grabbing; }
+
+  .toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: rgba(15, 17, 23, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .toolbar h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-bright);
+    letter-spacing: -0.3px;
+  }
+  .toolbar .subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 1px;
+  }
+  .legend {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .legend-line {
+    width: 28px;
+    height: 0;
+    border-top: 2.5px solid;
+  }
+  .legend-line.md { border-color: var(--md-line); }
+  .legend-line.lk { border-color: var(--lk-line); border-top-style: dashed; }
+  .legend-line.txt { border-color: var(--txt-line); border-top-style: dotted; }
+  .legend-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+  }
+  .legend-dot.pk { background: var(--pk); }
+  .legend-dot.fk { background: var(--fk); }
+  .legend-dot.uk { background: var(--uk); }
+  .legend-dot.enc { background: var(--enc); }
+
+  .controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .controls button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .controls button:hover { background: var(--surface-hover); }
+  .controls .zoom-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 36px;
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  #canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div>
+    <h1>SF Messenger Plugin — Data Model v9</h1>
+    <div class="subtitle">Interactive ERD &middot; Scroll to zoom &middot; Drag to pan &middot; Arrows show FK source → target</div>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-line md"></div>Master-Detail</div>
+    <div class="legend-item"><div class="legend-line lk"></div>Lookup</div>
+    <div class="legend-item"><div class="legend-line txt"></div>Text ref</div>
+    <div class="legend-item"><div class="legend-dot pk"></div>PK</div>
+    <div class="legend-item"><div class="legend-dot fk"></div>FK</div>
+    <div class="legend-item"><div class="legend-dot uk"></div>UK</div>
+    <div class="legend-item"><div class="legend-dot enc"></div>ENC</div>
+  </div>
+  <div class="controls">
+    <button id="zoom-out" title="Zoom out">−</button>
+    <span class="zoom-label" id="zoom-label">100%</span>
+    <button id="zoom-in" title="Zoom in">+</button>
+    <button id="zoom-fit" title="Fit to screen">⊡</button>
+  </div>
+</div>
+
+<svg id="canvas" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow-md" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#3fb950"/>
+    </marker>
+    <marker id="arrow-lk" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#58a6ff"/>
+    </marker>
+    <marker id="arrow-txt" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#6e7681"/>
+    </marker>
+    <marker id="diamond-md" viewBox="0 0 12 8" refX="0" refY="4" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,4 L6,0 L12,4 L6,8 Z" fill="#3fb950"/>
+    </marker>
+    <marker id="diamond-lk" viewBox="0 0 12 8" refX="0" refY="4" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,4 L6,0 L12,4 L6,8 Z" fill="#58a6ff"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <g id="world"></g>
+</svg>
+
+<script>
+// ─── DATA ───────────────────────────────────────────
+const ROW_H = 22;
+const HDR_H = 30;
+const COL_W_NAME = 145;
+const COL_W_TYPE = 95;
+const COL_W_BADGE = 32;
+const PAD = 10;
+const TABLE_W = COL_W_NAME + COL_W_TYPE + COL_W_BADGE + PAD * 2;
+
+const tables = {
+  // ── Metadata ──
+  Channel_Type__mdt: {
+    label: 'Channel_Type__mdt',
+    category: 'meta',
+    x: 60, y: 60,
+    fields: [
+      { name: 'DeveloperName', type: 'text', badge: 'PK' },
+      { name: 'Messenger__c', type: 'picklist' },
+      { name: 'Protocol__c', type: 'picklist' },
+      { name: 'Config_Object_Name__c', type: 'text' },
+      { name: 'Requires_App__c', type: 'checkbox' },
+      { name: 'Supports_Outbound__c', type: 'checkbox' },
+    ]
+  },
+  Encryption_Key__mdt: {
+    label: 'Encryption_Key__mdt',
+    category: 'meta',
+    x: 1580, y: 60,
+    fields: [
+      { name: 'DeveloperName', type: 'text', badge: 'PK' },
+      { name: 'Key_Value__c', type: 'text', badge: 'ENC' },
+      { name: 'Is_Active__c', type: 'checkbox' },
+    ]
+  },
+  Apple_MSP__mdt: {
+    label: 'Apple_MSP__mdt',
+    category: 'meta',
+    x: 1580, y: 200,
+    fields: [
+      { name: 'DeveloperName', type: 'text', badge: 'PK' },
+      { name: 'MSP_ID__c', type: 'text' },
+      { name: 'MSP_Secret__c', type: 'text', badge: 'ENC' },
+      { name: 'Endpoint_URL__c', type: 'url' },
+    ]
+  },
+
+  // ── Standard Objects ──
+  SF_User: {
+    label: 'User (standard)',
+    category: 'std',
+    x: 1180, y: 60,
+    fields: [
+      { name: 'Id', type: 'id', badge: 'PK' },
+      { name: 'Name', type: 'text' },
+    ]
+  },
+  Lead: {
+    label: 'Lead (standard)',
+    category: 'std',
+    x: 1180, y: 860,
+    fields: [
+      { name: 'Id', type: 'id', badge: 'PK' },
+      { name: 'Phone', type: 'phone' },
+      { name: 'MobilePhone', type: 'phone' },
+    ]
+  },
+  Contact: {
+    label: 'Contact (standard)',
+    category: 'std',
+    x: 1180, y: 1000,
+    fields: [
+      { name: 'Id', type: 'id', badge: 'PK' },
+      { name: 'Phone', type: 'phone' },
+    ]
+  },
+
+  // ── Core ──
+  Messenger_App__c: {
+    label: 'Messenger_App__c',
+    category: 'core',
+    x: 60, y: 300,
+    fields: [
+      { name: 'Name', type: 'autonumber', badge: 'PK' },
+      { name: 'Owner__c', type: 'lookup', badge: 'FK' },
+      { name: 'Messenger__c', type: 'picklist' },
+      { name: 'App_Name__c', type: 'text' },
+      { name: 'App_External_ID__c', type: 'text' },
+      { name: 'App_Secret__c', type: 'encrypted', badge: 'ENC' },
+      { name: 'Status__c', type: 'picklist' },
+    ]
+  },
+  Messenger_Channel__c: {
+    label: 'Messenger_Channel__c',
+    category: 'core',
+    x: 470, y: 250,
+    fields: [
+      { name: 'Name', type: 'autonumber', badge: 'PK' },
+      { name: 'Channel_Type_API_Name__c', type: 'text', badge: 'FK' },
+      { name: 'App__c', type: 'lookup', badge: 'FK' },
+      { name: 'Owner', type: 'lookup', badge: 'FK' },
+      { name: 'External_Account_ID__c', type: 'text' },
+      { name: 'Display_Name__c', type: 'text' },
+      { name: 'Active__c', type: 'checkbox' },
+      { name: 'Status__c', type: 'picklist' },
+      { name: 'Session_Status__c', type: 'picklist' },
+      { name: 'Session_Last_Heartbeat__c', type: 'datetime' },
+      { name: 'Is_Compromised__c', type: 'checkbox' },
+      { name: 'Go_Connection_Ref__c', type: 'text' },
+    ]
+  },
+
+  // ── Config Objects ──
+  Telegram_Config__c: {
+    label: 'Telegram_Config__c',
+    category: 'config',
+    x: 20, y: 650,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Account_Type__c', type: 'picklist' },
+      { name: 'Bot_Token__c', type: 'encrypted', badge: 'ENC' },
+      { name: 'Bot_Username__c', type: 'text' },
+      { name: 'Phone_Number__c', type: 'phone' },
+      { name: 'TFA_Password__c', type: 'encrypted', badge: 'ENC' },
+    ]
+  },
+  WhatsApp_Config__c: {
+    label: 'WhatsApp_Config__c',
+    category: 'config',
+    x: 320, y: 650,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Phone_Number_ID__c', type: 'text' },
+      { name: 'Display_Phone__c', type: 'phone' },
+      { name: 'WABA_ID__c', type: 'text' },
+      { name: 'Access_Token_Enc__c', type: 'longtext', badge: 'ENC' },
+      { name: 'Quality_Rating__c', type: 'picklist' },
+    ]
+  },
+  Viber_Config__c: {
+    label: 'Viber_Config__c',
+    category: 'config',
+    x: 620, y: 650,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Auth_Token__c', type: 'encrypted', badge: 'ENC' },
+      { name: 'Bot_Name__c', type: 'text' },
+    ]
+  },
+  Twilio_Config__c: {
+    label: 'Twilio_Config__c',
+    category: 'config',
+    x: 620, y: 810,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Phone_Number__c', type: 'phone' },
+      { name: 'Account_SID__c', type: 'text' },
+      { name: 'Auth_Token__c', type: 'encrypted', badge: 'ENC' },
+      { name: 'Number_Type__c', type: 'picklist' },
+    ]
+  },
+  Vonage_Config__c: {
+    label: 'Vonage_Config__c',
+    category: 'config',
+    x: 320, y: 840,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Phone_Number__c', type: 'phone' },
+      { name: 'API_Key__c', type: 'text' },
+      { name: 'API_Secret__c', type: 'encrypted', badge: 'ENC' },
+      { name: 'Application_ID__c', type: 'text' },
+      { name: 'Private_Key_Enc__c', type: 'longtext', badge: 'ENC' },
+    ]
+  },
+  Bird_Config__c: {
+    label: 'Bird_Config__c',
+    category: 'config',
+    x: 20, y: 840,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Phone_Number__c', type: 'phone' },
+      { name: 'Access_Key__c', type: 'encrypted', badge: 'ENC' },
+      { name: 'Organization_ID__c', type: 'text' },
+      { name: 'Workspace_ID__c', type: 'text' },
+    ]
+  },
+  Apple_Messages_Config__c: {
+    label: 'Apple_Msg_Config__c',
+    category: 'config',
+    x: 20, y: 1050,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Business_ID__c', type: 'text' },
+      { name: 'Intent_ID__c', type: 'text' },
+      { name: 'Registration_Type__c', type: 'picklist' },
+      { name: 'Onboarding_Status__c', type: 'picklist' },
+    ]
+  },
+
+  // ── Access ──
+  Channel_User_Access__c: {
+    label: 'Channel_User_Access__c',
+    category: 'core',
+    x: 880, y: 250,
+    fields: [
+      { name: 'Channel__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Assignee_Type__c', type: 'picklist' },
+      { name: 'User__c', type: 'lookup', badge: 'FK' },
+      { name: 'Group_ID__c', type: 'text' },
+      { name: 'Access_Level__c', type: 'picklist' },
+      { name: 'Is_Primary_Assignee__c', type: 'checkbox' },
+      { name: 'Is_Active__c', type: 'checkbox' },
+    ]
+  },
+
+  // ── Audit ──
+  Channel_Audit_Log__c: {
+    label: 'Channel_Audit_Log__c',
+    category: 'core',
+    x: 880, y: 520,
+    fields: [
+      { name: 'Channel__c', type: 'lookup', badge: 'FK' },
+      { name: 'Event_Type__c', type: 'picklist' },
+      { name: 'Event_Detail__c', type: 'longtext' },
+      { name: 'Performed_By__c', type: 'lookup', badge: 'FK' },
+      { name: 'Source__c', type: 'text' },
+    ]
+  },
+
+  // ── Chat & Messages ──
+  Messenger_Chat__c: {
+    label: 'Messenger_Chat__c',
+    category: 'core',
+    x: 880, y: 760,
+    fields: [
+      { name: 'Channel__c', type: 'lookup', badge: 'FK' },
+      { name: 'Lead__c', type: 'lookup', badge: 'FK' },
+      { name: 'Contact__c', type: 'lookup', badge: 'FK' },
+      { name: 'Assigned_User__c', type: 'lookup', badge: 'FK' },
+      { name: 'Chat_External_ID__c', type: 'text', badge: 'UK' },
+      { name: 'Status__c', type: 'picklist' },
+      { name: 'Last_Message_At__c', type: 'datetime' },
+      { name: 'Unread_Count__c', type: 'number' },
+    ]
+  },
+  Messenger_Message__c: {
+    label: 'Messenger_Message__c',
+    category: 'core',
+    x: 880, y: 1050,
+    fields: [
+      { name: 'Chat__c', type: 'master_detail', badge: 'FK' },
+      { name: 'Message_External_ID__c', type: 'text', badge: 'UK' },
+      { name: 'Sender_Name__c', type: 'text' },
+      { name: 'Message_Text__c', type: 'longtext' },
+      { name: 'Direction__c', type: 'picklist' },
+      { name: 'Message_Type__c', type: 'picklist' },
+      { name: 'Media_URL__c', type: 'url' },
+      { name: 'Delivery_Status__c', type: 'picklist' },
+      { name: 'Sent_At__c', type: 'datetime' },
+    ]
+  },
+};
+
+// Relationships: from field in source table → to target table header
+// type: 'md' | 'lk' | 'txt'
+const relationships = [
+  // Channel_Type text ref
+  { from: 'Messenger_Channel__c', field: 'Channel_Type_API_Name__c', to: 'Channel_Type__mdt', type: 'txt', label: 'text ref' },
+  // App → Channel
+  { from: 'Messenger_Channel__c', field: 'App__c', to: 'Messenger_App__c', type: 'lk', label: 'lookup nullable' },
+  // App owner
+  { from: 'Messenger_App__c', field: 'Owner__c', to: 'SF_User', type: 'lk', label: 'lookup' },
+  // Channel owner
+  { from: 'Messenger_Channel__c', field: 'Owner', to: 'SF_User', type: 'lk', label: 'lookup' },
+  // Config MD 1:1
+  { from: 'Telegram_Config__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  { from: 'WhatsApp_Config__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  { from: 'Viber_Config__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  { from: 'Twilio_Config__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  { from: 'Vonage_Config__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  { from: 'Bird_Config__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  { from: 'Apple_Messages_Config__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  // Access
+  { from: 'Channel_User_Access__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'md', label: 'MD cascade' },
+  { from: 'Channel_User_Access__c', field: 'User__c', to: 'SF_User', type: 'lk', label: 'lookup' },
+  // Audit
+  { from: 'Channel_Audit_Log__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'lk', label: 'lookup survives' },
+  { from: 'Channel_Audit_Log__c', field: 'Performed_By__c', to: 'SF_User', type: 'lk', label: 'lookup' },
+  // Chat
+  { from: 'Messenger_Chat__c', field: 'Channel__c', to: 'Messenger_Channel__c', type: 'lk', label: 'lookup survives' },
+  { from: 'Messenger_Chat__c', field: 'Lead__c', to: 'Lead', type: 'lk', label: 'lookup nullable' },
+  { from: 'Messenger_Chat__c', field: 'Contact__c', to: 'Contact', type: 'lk', label: 'lookup nullable' },
+  { from: 'Messenger_Chat__c', field: 'Assigned_User__c', to: 'SF_User', type: 'lk', label: 'lookup' },
+  // Message
+  { from: 'Messenger_Message__c', field: 'Chat__c', to: 'Messenger_Chat__c', type: 'md', label: 'MD cascade' },
+];
+
+// ─── COLORS ─────────────────────────────────────────
+const COLORS = {
+  md: '#3fb950',
+  lk: '#58a6ff',
+  txt: '#6e7681',
+  PK: '#c49cff',
+  FK: '#ff9f43',
+  UK: '#6cc3f0',
+  ENC: '#ff6b6b',
+};
+
+const CAT_HEADER = {
+  meta: '#1a3028',
+  std: '#1a1a30',
+  core: '#1a2235',
+  config: '#2a1a1a',
+};
+const CAT_BODY = {
+  meta: '#141e1a',
+  std: '#14141e',
+  core: '#141a22',
+  config: '#1e1414',
+};
+
+// ─── SVG HELPERS ────────────────────────────────────
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+// ─── RENDER ─────────────────────────────────────────
+const world = document.getElementById('world');
+
+// Pre-compute table heights and store field positions
+const tableInfo = {};
+for (const [id, t] of Object.entries(tables)) {
+  const h = HDR_H + t.fields.length * ROW_H + 6;
+  tableInfo[id] = { ...t, w: TABLE_W, h, fieldY: {} };
+  t.fields.forEach((f, i) => {
+    tableInfo[id].fieldY[f.name] = t.y + HDR_H + i * ROW_H + ROW_H / 2;
+  });
+}
+
+// Draw connections FIRST (behind tables)
+const connGroup = el('g', { id: 'connections' }, world);
+for (const rel of relationships) {
+  const src = tableInfo[rel.from];
+  const tgt = tableInfo[rel.to];
+  if (!src || !tgt) continue;
+
+  const fieldIdx = src.fields ? src.fields.findIndex(f => f.name === rel.field) : -1;
+  const srcFieldY = fieldIdx >= 0 ? src.y + HDR_H + fieldIdx * ROW_H + ROW_H / 2 : src.y + HDR_H / 2;
+
+  // Determine connection side
+  const srcCx = src.x + src.w / 2;
+  const tgtCx = tgt.x + tgt.w / 2;
+  const tgtCy = tgt.y + tgt.h / 2;
+
+  let srcX, tgtX, tgtY;
+
+  // Source: exit from left or right side
+  if (srcCx > tgtCx + tgt.w / 2) {
+    srcX = src.x; // exit left
+  } else if (srcCx + src.w / 2 < tgtCx) {
+    srcX = src.x + src.w; // exit right
+  } else {
+    // Overlapping X — go top or bottom
+    srcX = src.x + src.w / 2;
+  }
+
+  // Target: arrive at closest side
+  const midX = srcX;
+  if (tgtCy > srcFieldY) {
+    // Target is below
+    if (Math.abs(srcCx - tgtCx) < tgt.w) {
+      tgtX = tgt.x + tgt.w / 2;
+      tgtY = tgt.y;
+    } else if (srcCx < tgtCx) {
+      tgtX = tgt.x;
+      tgtY = tgt.y + tgt.h / 2;
+    } else {
+      tgtX = tgt.x + tgt.w;
+      tgtY = tgt.y + tgt.h / 2;
+    }
+  } else {
+    // Target is above or same level
+    if (srcCx < tgtCx) {
+      tgtX = tgt.x;
+      tgtY = tgt.y + tgt.h / 2;
+    } else if (srcCx > tgtCx + tgt.w) {
+      tgtX = tgt.x + tgt.w;
+      tgtY = tgt.y + tgt.h / 2;
+    } else {
+      tgtX = tgt.x + tgt.w / 2;
+      tgtY = tgt.y + tgt.h;
+    }
+  }
+
+  // Smart routing: determine exit/entry points
+  let x1, y1, x2, y2;
+  const srcLeft = src.x;
+  const srcRight = src.x + src.w;
+  const tgtLeft = tgt.x;
+  const tgtRight = tgt.x + tgt.w;
+  const tgtTop = tgt.y;
+  const tgtBot = tgt.y + tgt.h;
+
+  y1 = srcFieldY;
+
+  // Choose exit side
+  const distLeft = Math.abs(srcLeft - tgtCx);
+  const distRight = Math.abs(srcRight - tgtCx);
+  if (distLeft < distRight) {
+    x1 = srcLeft;
+  } else {
+    x1 = srcRight;
+  }
+
+  // Choose entry point on target
+  // Find closest point on target boundary
+  const candidates = [
+    { x: tgtLeft, y: Math.max(tgtTop, Math.min(tgtBot, y1)), side: 'left' },
+    { x: tgtRight, y: Math.max(tgtTop, Math.min(tgtBot, y1)), side: 'right' },
+    { x: Math.max(tgtLeft, Math.min(tgtRight, x1)), y: tgtTop, side: 'top' },
+    { x: Math.max(tgtLeft, Math.min(tgtRight, x1)), y: tgtBot, side: 'bottom' },
+  ];
+
+  let best = candidates[0];
+  let bestDist = Infinity;
+  for (const c of candidates) {
+    const d = Math.hypot(c.x - x1, c.y - y1);
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  x2 = best.x;
+  y2 = best.y;
+
+  // Build path with rounded corners
+  const color = COLORS[rel.type] || '#555';
+  const dasharray = rel.type === 'lk' ? '6,4' : rel.type === 'txt' ? '3,3' : 'none';
+
+  // Create orthogonal path
+  let path;
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+
+  if (best.side === 'left' || best.side === 'right') {
+    // Horizontal routing
+    path = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+  } else {
+    // Vertical routing
+    path = `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
+  }
+
+  const markerEnd = `url(#arrow-${rel.type})`;
+
+  el('path', {
+    d: path,
+    fill: 'none',
+    stroke: color,
+    'stroke-width': '1.8',
+    'stroke-dasharray': dasharray === 'none' ? '' : dasharray,
+    'marker-end': markerEnd,
+    opacity: '0.75',
+  }, connGroup);
+
+  // Highlight dot at source field
+  el('circle', {
+    cx: x1,
+    cy: y1,
+    r: '3',
+    fill: color,
+    opacity: '0.9',
+  }, connGroup);
+}
+
+// Draw tables
+const tableGroup = el('g', { id: 'tables' }, world);
+for (const [id, t] of Object.entries(tableInfo)) {
+  const g = el('g', { class: 'table', 'data-id': id, transform: `translate(${t.x},${t.y})` }, tableGroup);
+
+  // Body background
+  el('rect', {
+    x: 0, y: 0,
+    width: t.w, height: t.h,
+    rx: 6,
+    fill: CAT_BODY[t.category] || '#181c25',
+    stroke: '#2a3040',
+    'stroke-width': '1',
+    filter: 'url(#shadow)',
+  }, g);
+
+  // Header background
+  el('rect', {
+    x: 0, y: 0,
+    width: t.w, height: HDR_H,
+    rx: 6,
+    fill: CAT_HEADER[t.category] || '#1a2030',
+  }, g);
+  // Fix bottom corners of header
+  el('rect', {
+    x: 0, y: HDR_H - 8,
+    width: t.w, height: 8,
+    fill: CAT_HEADER[t.category] || '#1a2030',
+  }, g);
+
+  // Header text
+  el('text', {
+    x: t.w / 2, y: HDR_H / 2 + 1,
+    'text-anchor': 'middle',
+    'dominant-baseline': 'central',
+    fill: '#f0f2f6',
+    'font-size': '11.5',
+    'font-weight': '600',
+    'font-family': "'IBM Plex Sans', sans-serif",
+  }, g).textContent = t.label;
+
+  // Separator line
+  el('line', {
+    x1: 0, y1: HDR_H,
+    x2: t.w, y2: HDR_H,
+    stroke: '#2a3040',
+    'stroke-width': '1',
+  }, g);
+
+  // Fields
+  t.fields.forEach((f, i) => {
+    const fy = HDR_H + i * ROW_H;
+
+    // Alternating row bg
+    if (i % 2 === 1) {
+      el('rect', {
+        x: 1, y: fy,
+        width: t.w - 2, height: ROW_H,
+        fill: 'rgba(255,255,255,0.02)',
+        rx: i === t.fields.length - 1 ? 4 : 0,
+      }, g);
+    }
+
+    // Field name
+    const nameColor = f.badge === 'FK' ? COLORS.FK :
+                      f.badge === 'PK' ? COLORS.PK :
+                      f.badge === 'UK' ? COLORS.UK :
+                      f.badge === 'ENC' ? COLORS.ENC : '#c0c4cc';
+
+    el('text', {
+      x: PAD, y: fy + ROW_H / 2,
+      'dominant-baseline': 'central',
+      fill: nameColor,
+      'font-size': '10.5',
+      'font-weight': f.badge ? '500' : '400',
+      'font-family': "'IBM Plex Mono', monospace",
+    }, g).textContent = f.name;
+
+    // Type
+    el('text', {
+      x: PAD + COL_W_NAME, y: fy + ROW_H / 2,
+      'dominant-baseline': 'central',
+      fill: '#717a8c',
+      'font-size': '10',
+      'font-family': "'IBM Plex Mono', monospace",
+    }, g).textContent = f.type;
+
+    // Badge
+    if (f.badge) {
+      const bx = t.w - PAD - COL_W_BADGE + 4;
+      const by = fy + 3;
+      const badgeColor = COLORS[f.badge] || '#555';
+      el('rect', {
+        x: bx, y: by,
+        width: COL_W_BADGE - 4, height: ROW_H - 6,
+        rx: 3,
+        fill: badgeColor,
+        opacity: '0.15',
+      }, g);
+      el('text', {
+        x: bx + (COL_W_BADGE - 4) / 2,
+        y: fy + ROW_H / 2,
+        'text-anchor': 'middle',
+        'dominant-baseline': 'central',
+        fill: badgeColor,
+        'font-size': '8.5',
+        'font-weight': '600',
+        'font-family': "'IBM Plex Mono', monospace",
+      }, g).textContent = f.badge;
+    }
+  });
+}
+
+// ─── PAN & ZOOM ─────────────────────────────────────
+let scale = 0.85;
+let tx = 40, ty = 70;
+let dragging = false;
+let lastX, lastY;
+
+function applyTransform() {
+  world.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
+  document.getElementById('zoom-label').textContent = Math.round(scale * 100) + '%';
+}
+applyTransform();
+
+const canvas = document.getElementById('canvas');
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  document.body.classList.add('dragging');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  tx += e.clientX - lastX;
+  ty += e.clientY - lastY;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  dragging = false;
+  document.body.classList.remove('dragging');
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  tx = mx - (mx - tx) * zoomFactor;
+  ty = my - (my - ty) * zoomFactor;
+  scale *= zoomFactor;
+  scale = Math.max(0.2, Math.min(3, scale));
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('zoom-in').onclick = () => { scale = Math.min(3, scale * 1.15); applyTransform(); };
+document.getElementById('zoom-out').onclick = () => { scale = Math.max(0.2, scale * 0.85); applyTransform(); };
+document.getElementById('zoom-fit').onclick = () => {
+  scale = 0.7;
+  tx = 30;
+  ty = 60;
+  applyTransform();
+};
+</script>
+</body>
+</html>
