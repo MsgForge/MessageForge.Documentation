@@ -65,7 +65,7 @@ func TestLoad_Defaults(t *testing.T) {
 - Create: `internal/database/pool.go`
 - Create: `internal/database/pool_test.go`
 
-**Skill:** Read `docs/reference/postgres-schema.md`
+**Skill:** Read `MessageForge.Documentation/reference/postgres-schema.md`
 
 **Step 1: Write failing test**
 ```go
@@ -88,7 +88,7 @@ func TestNewPool_InvalidURL(t *testing.T) {
 - Create: `internal/database/migrations/001_initial.sql`
 - Create: `internal/database/migrate_test.go`
 
-**Skill:** `docs/reference/postgres-schema.md` — copy exact schema
+**Skill:** `MessageForge.Documentation/reference/postgres-schema.md` — copy exact schema
 
 **Step 1:** Create migration SQL from postgres-schema.md (connections, sessions, inbound_queue, outbound_queue, media_files tables)
 **Step 2:** Implement `Migrate(ctx, pool)` — executes SQL files in order
@@ -105,7 +105,7 @@ func TestNewPool_InvalidURL(t *testing.T) {
 - Create: `internal/server/server.go`
 - Create: `internal/server/server_test.go`
 - Create: `internal/server/middleware.go`
-- Modify: `cmd/server/main.go`
+- Modify: `cmd/messenger/main.go`
 
 **Step 1: Write failing test**
 ```go
@@ -117,9 +117,9 @@ func TestHealthEndpoint(t *testing.T) {
 
 **Step 2:** Implement HTTP server with `/health` endpoint using `net/http`
 **Step 3:** Add HMAC validation middleware (for future webhook endpoints)
-**Step 4:** Wire into `cmd/server/main.go` with graceful shutdown
+**Step 4:** Wire into `cmd/messenger/main.go` with graceful shutdown
 **Step 5:** Run: `go test ./internal/server/ -v`
-**Step 6:** Run: `go build ./cmd/server/ && ./server` — verify health endpoint works
+**Step 6:** Run: `go build ./cmd/messenger/ && ./messenger` — verify health endpoint works
 **Step 7:** Commit: `feat: http server with health endpoint and hmac middleware`
 
 ---
@@ -261,7 +261,7 @@ func TestHealthEndpoint(t *testing.T) {
 - Create: `salesforce/force-app/main/default/objects/Messenger_Message__c/`
 - Create: `salesforce/force-app/main/default/objects/Messenger_Event__c/`
 
-**Skill:** `salesforce-apex-patterns`, read `docs/reference/sf-data-model.md`
+**Skill:** `salesforce-apex-patterns`, read `MessageForge.Documentation/reference/sf-data-model.md`
 
 **Step 1:** Create object XML metadata for all 4 custom objects with fields per sf-data-model.md
 **Step 2:** Deploy to scratch org: `sf project deploy start --source-dir salesforce/force-app`
@@ -277,7 +277,7 @@ func TestHealthEndpoint(t *testing.T) {
 - Create: `salesforce/force-app/main/default/objects/Session_Status__e/`
 - Create: `salesforce/force-app/main/default/objects/Message_Delivery_Status__e/`
 
-**Skill:** read `docs/reference/sf-data-model.md` (Platform Events section)
+**Skill:** read `MessageForge.Documentation/reference/sf-data-model.md` (Platform Events section)
 
 **Step 1:** Create Platform Event metadata XML for all 3 events
 **Step 2:** Deploy and verify
@@ -537,7 +537,7 @@ func TestHealthEndpoint(t *testing.T) {
 ### Task 5.4: Wire It All Together
 
 **Files:**
-- Modify: `cmd/server/main.go`
+- Modify: `cmd/messenger/main.go`
 - Modify: `internal/server/server.go`
 
 **Step 1:** Wire inbound message flow: Telegram → adapter → Centrifugo publish + SF ingestion
@@ -664,9 +664,9 @@ func TestHealthEndpoint(t *testing.T) {
 
 ### Task 7.3: AppExchange Prep
 
-**Skill:** Read `docs/plans/appexchange-onboarding.md`
+**Skill:** Read `MessageForge.Documentation/plans/appexchange-onboarding.md`
 
-**Step 1:** Complete security checklist (docs/reference/security-checklist.md)
+**Step 1:** Complete security checklist (MessageForge.Documentation/reference/security-checklist.md)
 **Step 2:** Prepare DAST scan report
 **Step 3:** Verify Connected App configuration
 **Step 4:** Prepare listing materials

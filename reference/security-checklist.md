@@ -39,7 +39,7 @@
 
 - [x] No CRM credentials hardcoded in Go source
 - [x] All PostgreSQL credentials via environment variables
-- [ ] Bot tokens encrypted at rest in PostgreSQL
+- [x] Bot tokens encrypted at rest in PostgreSQL (AES-256-GCM via `database/crypto.go`)
 - [x] MTProto session keys in PostgreSQL UNLOGGED tables, never transmitted to Salesforce
 - [ ] Salesforce secrets in Protected Custom Metadata Types (not Custom Settings)
 
@@ -53,7 +53,7 @@
 - [ ] R2 bucket strictly private (no public access)
 - [x] Inbound media: HMAC-signed tokens with expiration at Cloudflare Worker edge
 - [x] Outbound media: Presigned URL generation enforces Content-Type binding
-- [ ] Presigned URL expiration capped to 60 minute maximum
+- [x] Presigned URL expiration capped: GET ≤ 60 min, PUT ≤ 15 min (`r2.go` TTL caps)
 - [x] UUID object keys (prevent enumeration)
 
 ## CORS Security
@@ -92,6 +92,15 @@
 - [x] SRP v6a flow implemented (`mtproto/client.go`)
 - [x] Auth state machine: OTP → 2FA → success
 - [x] Password never transmitted in plaintext
+
+## Token TTL Reference
+
+| Token | TTL | System | Notes |
+|---|---|---|---|
+| Centrifugo JWT | 15 min | LWC → Centrifugo WebSocket | LWC refresh callback renews before expiry (ADR-13) |
+| Salesforce OAuth | 90 min | Go → Salesforce REST API | Auto-refresh with double-check locking (`auth.go`) |
+| R2 Presigned URL (inbound) | 60 min | Cloudflare Worker → R2 GET | HMAC-signed at Worker edge |
+| R2 Presigned URL (outbound) | 15 min | LWC → R2 PUT | Short-lived, Content-Type bound (ADR-14) |
 
 ## Audit Trail
 

@@ -15,7 +15,7 @@ architecture/
 
 reference/
 ├── postgres-schema.md           — PostgreSQL tables, indexes, queue patterns
-├── sf-data-model.md             — Salesforce custom objects, Platform Events, package structure
+├── sf-data-model.md             — Salesforce custom objects (21 + 2 CMTs), Platform Events, package structure
 ├── salesforce-guide.md          — Salesforce concepts explained for Go developers
 ├── governor-limits.md           — SF governor limits and design rules
 ├── security-checklist.md        — Security audit checklist (Go, Apex, LWC, infra)
@@ -30,6 +30,11 @@ plans/
 ├── 2026-03-07-go-rewrite-plan.md   — Backend rewrite task plan
 ├── 2026-03-09-telegram-poc-design.md — PoC design document
 └── 2026-03-09-telegram-poc-plan.md   — PoC implementation plan
+
+reviews/
+├── 2026-03-29-architecture-review.md  — Full architectural feasibility assessment
+├── 2026-03-29-risk-register.md        — 20 risks with severity, mitigation, agent commands
+└── 2026-03-29-implementation-roadmap.md — 6-phase agent-executable implementation plan
 
 research/
 ├── complete-technical-specification.md — Full architecture & technical reference (single doc)

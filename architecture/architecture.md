@@ -2,13 +2,13 @@
 
 ## System Overview
 
-A Go middleware server bridges Telegram and Salesforce. Each component has a specific role:
+A Go middleware server bridges messaging platforms (Telegram, WhatsApp, Viber, SMS, Apple Messages) and Salesforce. Each component has a specific role:
 
 | Component | Role |
 |---|---|
-| Go Middleware | Telegram protocol handler, message routing, media processing, queue management |
+| Go Middleware | Multi-platform protocol handler (MTProto, Bot API, Cloud API, REST, MSP), message routing, media processing, queue management |
 | PostgreSQL | Session storage, message queues, connection registry, media refs, rate limit state |
-| Salesforce | CRM data store, user interface (LWC), business logic (Apex), event bus |
+| Salesforce | CRM data store, user interface (LWC), business logic (Apex), event bus, credential storage (encrypted) |
 | Cloudflare R2 | Media file storage (images, video, voice, documents) |
 | Cloudflare Workers | Edge reverse proxy for secure, cached media delivery |
 | Centrifugo | Real-time WebSocket server for live chat UI updates |
@@ -16,9 +16,13 @@ A Go middleware server bridges Telegram and Salesforce. Each component has a spe
 ## Data Flow
 
 ```
-                    ┌─────────────┐
-                    │   Telegram   │
-                    │  MTProto/Bot │
+                    ┌──────────────┐
+                    │  Messaging   │
+                    │  Platforms   │
+                    │  (Telegram,  │
+                    │  WhatsApp,   │
+                    │  Viber, SMS, │
+                    │  Apple)      │
                     └──────┬───────┘
                            │
                     ┌──────▼───────┐         ┌──────────────┐
@@ -51,44 +55,73 @@ A Go middleware server bridges Telegram and Salesforce. Each component has a spe
 | Data | Table | Notes |
 |---|---|---|
 | MTProto sessions | `mtproto_sessions` | UNLOGGED for performance. Auth keys, salts, sequence numbers |
-| Bot API config | `bot_connections` | Encrypted tokens, webhook URLs |
+| Bot API config | `bot_connections` | Webhook URLs, runtime state |
+| WhatsApp webhooks | `whatsapp_webhooks` | Webhook registrations, verify tokens |
 | Inbound queue | `inbound_queue` | Messages awaiting Salesforce delivery |
-| Outbound queue | `outbound_queue` | Messages awaiting Telegram sending |
-| Media references | `media_files` | R2 object keys, Telegram file IDs, MIME types |
+| Outbound queue | `outbound_queue` | Messages awaiting platform sending |
+| Media references | `media_files` | R2 object keys, platform file IDs, MIME types |
 | Rate limit state | `rate_limit_buckets` | Per-account, per-bot token buckets |
-| Connection registry | `connections` | All active connections, mapped to SF org + user |
+| Connection registry | `connections` | All active connections, mapped to SF Channel ID |
 | Proxy assignments | `proxy_pool` | Residential proxy IPs per MTProto session |
+
+**Important:** Go does NOT persist credentials. It reads them from Salesforce at startup (via Config + App objects), establishes connections, then holds only runtime session data.
 
 ### Salesforce Side
 
 | Data | Custom Object | Notes |
 |---|---|---|
-| Connection config | `Messenger_Connection__c` | Status, platform, account mapping |
-| Chats | `Messenger_Chat__c` | Chat ID, title, type, last message timestamp |
+| Channel config | `Messenger_Channel__c` | Base object — platform-agnostic status, session state |
+| Platform credentials | `*_Config__c` (8 types) | Master-Detail to Channel. Encrypted secrets. |
+| Platform accounts | `*_App__c` (5 types) | Account-level credentials shared across channels |
+| Agent access | `Channel_User_Access__c` | Polymorphic: User or Group with access level |
+| Chats | `Messenger_Chat__c` | Thread metadata, Lead/Contact link, assigned agent |
 | Messages | `Messenger_Message__c` | Text, sender, media URL, direction, delivery status |
-| Parsed events | `Messenger_Event__c` | Extracted activities/meetups from messages |
+| Attachments | `Messenger_Attachment__c` | Multi-media support (albums, documents). MD → Message |
+| Templates | `Messenger_Template__c` | Reusable message templates (WhatsApp required). Lookup → Channel |
+| Audit trail | `Channel_Audit_Log__c` | Security events, credential rotations, session changes |
+| Channel types | `Channel_Type__mdt` | Package-deployed reference (read-only for customer) |
+| AES key | `Encryption_Key__mdt` | Protected CMT — invisible to customer |
+| Apple MSP creds | `Apple_MSP__mdt` | Protected CMT — our Apple credentials |
 
 ### Cloudflare R2
 
 All media files. Never stored in Salesforce. Zero egress fees.
 
-## Dual Protocol: MTProto vs Bot API
+## Multi-Platform Support
 
-Both protocols work bidirectionally — send and receive through either channel.
+### Architecture: Base + Config + App
 
-### When to Use Which
+The data model uses a three-layer pattern:
 
-| Use Case | Protocol | Reason |
-|---|---|---|
-| Parsing public channels | MTProto | Bot API can't read unless bot is admin |
-| Monitoring private groups | MTProto | Userbot must be a member |
-| Sending notifications | Bot API | Cleaner UX, bot-specific features |
-| Interactive menus/commands | Bot API | Inline buttons, command handlers |
-| Downloading large media (>20MB) | MTProto | Bot API caps at 20MB |
-| Responding to user DMs | Bot API | Users expect bot, not userbot |
-| Bulk message export/archive | MTProto | Full history access, higher limits |
+1. **Messenger_Channel__c** — platform-agnostic base. Status, session, owner, display name. No credentials.
+2. **Platform Config objects** — 1:1 Master-Detail to Channel. Platform-specific credentials and settings.
+3. **Platform App objects** — account-level credentials shared across multiple channels. Config → App via Lookup.
 
-### Capability Comparison
+```
+Channel (base, agnostic)
+  └── Config (1:1 MD, platform-specific credentials)
+        └── App (Lookup, shared account-level credentials)
+```
+
+This separation means:
+- Channel can be queried/displayed without loading credentials
+- Deleting a channel cascades to config but not to app
+- App can be reused across multiple channels (e.g., one Twilio Account → many phone numbers)
+
+### Telegram: Dual Protocol
+
+Telegram is the only platform with a fundamental Bot vs User distinction (different protocols, different credentials, different capabilities):
+
+| Use Case | Protocol | Config Object | Reason |
+|---|---|---|---|
+| Parsing public channels | MTProto | `Telegram_User_Config__c` | Bot API can't read unless bot is admin |
+| Monitoring private groups | MTProto | `Telegram_User_Config__c` | Userbot must be a member |
+| Sending notifications | Bot API | `Telegram_Bot_Config__c` | Cleaner UX, bot-specific features |
+| Interactive menus/commands | Bot API | `Telegram_Bot_Config__c` | Inline buttons, command handlers |
+| Downloading large media | MTProto | `Telegram_User_Config__c` | Bot API caps at 20MB |
+| Bulk message export | MTProto | `Telegram_User_Config__c` | Full history access |
+
+### Capability Comparison (Telegram)
 
 | Capability | MTProto (Userbot) | Bot API |
 |---|---|---|
@@ -97,8 +130,7 @@ Both protocols work bidirectionally — send and receive through either channel.
 | File download | Up to 2 GB | Up to 20 MB |
 | File upload | Up to 2 GB | Up to 50 MB |
 | Account type | Phone number required | Bot token from @BotFather |
-| Rate limit scope | Per API ID + IP + behavior | Per bot token (IP abstracted) |
-| Event fidelity | All state changes | Filtered subset |
+| Rate limit scope | Per API ID + IP + behavior | Per bot token |
 
 ## Infrastructure
 
@@ -113,7 +145,7 @@ Telegram DCs (DC2, DC4) operate from **Amsterdam, Netherlands** (AS62041). Host 
 
 ### IP Reputation
 
-Clean, dedicated IPs required. Budget VPS with spam-tainted subnets increase ban risk. Deploy residential/ISP proxy pools for per-session MTProto IP isolation.
+Clean, dedicated IPs required for MTProto. Budget VPS with spam-tainted subnets increase ban risk. Deploy residential/ISP proxy pools for per-session MTProto IP isolation.
 
 ### ARM & CI/CD
 

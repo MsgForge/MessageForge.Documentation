@@ -16,7 +16,22 @@ CREATE UNLOGGED TABLE mtproto_sessions (
 );
 ```
 
-**Why UNLOGGED:** Skips Write-Ahead Log (WAL), eliminating disk I/O overhead. MTProto sessions update dozens of times per minute (salt rotations, sequence number increments). If server crashes, session data is lost — user simply re-authenticates. Performance gain is significant.
+**Why UNLOGGED:** Skips Write-Ahead Log (WAL), eliminating disk I/O overhead. MTProto sessions update dozens of times per minute (salt rotations, sequence number increments). Performance gain is significant.
+
+**Crash recovery (ADR-18):** A LOGGED backup table is snapshotted every 5 minutes. On crash, sessions restore from backup. Maximum data loss: 5 minutes. Users see brief reconnection, not full re-auth.
+
+### MTProto Session Backup (LOGGED)
+
+```sql
+CREATE TABLE mtproto_sessions_backup (
+    LIKE mtproto_sessions INCLUDING ALL
+);
+
+-- Index for efficient restore lookup
+CREATE INDEX idx_sessions_backup_conn ON mtproto_sessions_backup(connection_id);
+```
+
+**Snapshot mechanism:** Every 5 minutes, the Go middleware truncates the backup table and copies all rows from the UNLOGGED primary. On startup, if `mtproto_sessions` is empty but `mtproto_sessions_backup` has data, restore from backup.
 
 ### Universal Connection Registry
 
@@ -27,7 +42,7 @@ CREATE TABLE connections (
     connection_type TEXT NOT NULL,          -- 'mtproto_user', 'bot_api', 'whatsapp_business'
     sf_org_id       TEXT NOT NULL,          -- Salesforce Org ID
     sf_user_id      TEXT NOT NULL,          -- Salesforce User ID
-    sf_connection_id TEXT,                  -- SF record ID (Messenger_Connection__c)
+    sf_channel_id   TEXT,                  -- SF record ID (Messenger_Channel__c)
     credentials     JSONB NOT NULL,         -- Encrypted: phone, api_id, bot_token, etc.
     proxy_url       TEXT,
     status          TEXT DEFAULT 'active',
