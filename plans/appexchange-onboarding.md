@@ -2,7 +2,9 @@
 
 ## Classification
 
-Our app is a **Composite App** — it uses both on-platform code (Apex, LWC) and off-platform infrastructure (Go middleware, PostgreSQL, Cloudflare). This classification triggers additional security review requirements.
+Our app is a **Composite App** — it uses both on-platform code (Apex, LWC) and off-platform infrastructure (Go middleware, PostgreSQL). This classification triggers additional security review requirements.
+
+> **Note (ADR-20/21):** External infrastructure is limited to Go middleware, PostgreSQL, and residential proxies. Media storage uses Salesforce ContentVersion (not external). Real-time updates use Platform Events (not external WebSocket).
 
 ## 5-Step Onboarding Pipeline
 

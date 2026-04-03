@@ -4,11 +4,11 @@
 > **Workflow:** Use `dev-review-loop` skill for each task. Use `question-resolver` agent for decisions — do NOT ask the user.
 > **Notify user:** Only at phase completion or when genuinely stuck.
 
-**Goal:** Build a working Messenger-to-Salesforce integration with Telegram (Bot API + MTProto), live chat UI in Salesforce Lightning, and media handling via Cloudflare R2.
+**Goal:** Build a working Messenger-to-Salesforce integration with Telegram (Bot API + MTProto), live chat UI in Salesforce Lightning, and media handling via Salesforce ContentVersion.
 
-**Architecture:** Go middleware connects Telegram to Salesforce via REST/Platform Events. PostgreSQL stores sessions and queues. Centrifugo provides real-time WebSocket to LWC. R2 stores media.
+**Architecture:** Go middleware connects Telegram to Salesforce via REST/Platform Events. PostgreSQL stores sessions and queues. Platform Events via `lightning/empApi` provide real-time updates to LWC. Media stored in Salesforce ContentVersion (Files).
 
-**Tech Stack:** Go 1.23+, gotd/td, GoTGProto, pgx/v5, Salesforce Apex/LWC (2GP, namespace: tgint__), Centrifugo v6, Cloudflare R2+Workers
+**Tech Stack:** Go 1.23+, gotd/td, GoTGProto, pgx/v5, Salesforce Apex/LWC (2GP, namespace: tgint__)
 
 ---
 
@@ -90,7 +90,7 @@ func TestNewPool_InvalidURL(t *testing.T) {
 
 **Skill:** `MessageForge.Documentation/reference/postgres-schema.md` — copy exact schema
 
-**Step 1:** Create migration SQL from postgres-schema.md (connections, sessions, inbound_queue, outbound_queue, media_files tables)
+**Step 1:** Create migration SQL from postgres-schema.md (connections, sessions, inbound_queue, outbound_queue tables)
 **Step 2:** Implement `Migrate(ctx, pool)` — executes SQL files in order
 **Step 3:** Test requires running PostgreSQL: `docker compose up -d postgres`
 **Step 4:** Write integration test with test database
@@ -290,7 +290,7 @@ func TestHealthEndpoint(t *testing.T) {
 **Files:**
 - Create: `salesforce/force-app/main/default/customMetadata/Messenger_Settings__mdt/`
 
-**Step 1:** Create Protected Custom Metadata Type for secrets (webhook_secret, centrifugo_secret)
+**Step 1:** Create Protected Custom Metadata Type for secrets (webhook_secret)
 **Step 2:** Deploy and verify
 **Step 3:** Commit: `feat: protected custom metadata for secrets`
 
@@ -391,86 +391,87 @@ func TestHealthEndpoint(t *testing.T) {
 
 ## Phase 4: Media Pipeline
 
-**Agent:** `go-backend` (R2 upload/download), `salesforce-dev` (LWC rendering)
+**Agent:** `go-backend` (ContentVersion upload/download), `salesforce-dev` (LWC rendering)
 **Skills:** `media-pipeline`
 **Depends on:** Phase 1 + Phase 3
 
-### Task 4.1: R2 Upload Client
+### Task 4.1: Go ContentVersion REST API Client (multipart upload)
 
 **Files:**
-- Create: `internal/media/r2.go`
-- Create: `internal/media/r2_test.go`
+- Create: `internal/salesforce/contentversion.go`
+- Create: `internal/salesforce/contentversion_test.go`
 
 **Skill:** `media-pipeline` — MUST invoke
 
-**Step 1:** Implement `R2Client` using AWS SDK v2 with S3-compatible endpoint
-**Step 2:** Methods: `Upload(ctx, key, reader, contentType)`, `Delete(ctx, key)`
-**Step 3:** Presigned URL generation with SigV4 (short TTL)
-**Step 4:** Test with mock S3 server or localstack
-**Step 5:** Commit: `feat: cloudflare r2 upload client`
+**Step 1:** Implement `ContentVersionUploader` using multipart form-data POST to `/services/data/v62.0/sobjects/ContentVersion`
+**Step 2:** Methods: `Upload(ctx, params) (ContentVersionResult, error)`, `Download(ctx, contentVersionID) (io.ReadCloser, string, error)`
+**Step 3:** Set `FirstPublishLocationId` to auto-create `ContentDocumentLink`
+**Step 4:** Query back `ContentDocumentId` from created `ContentVersion`
+**Step 5:** Test with mock HTTP server
+**Step 6:** Commit: `feat: contentversion multipart upload and download adapter`
 
 ---
 
-### Task 4.2: Inbound Media Flow
+### Task 4.2: ContentDocumentLink Creation and Trigger
+
+**Files:**
+- Create: `salesforce/force-app/main/default/triggers/ContentDocumentLinkTrigger.trigger`
+- Create: `salesforce/force-app/main/default/classes/ContentDocumentLinkTriggerHandler.cls`
+- Create: `salesforce/force-app/main/default/classes/ContentDocumentLinkTriggerHandlerTest.cls`
+
+**Step 1:** Implement After Insert trigger: if `LinkedEntityId` references `Messenger_Message__c` or `Messenger_Attachment__c`, set `Has_File__c = true` and increment `File_Count__c`
+**Step 2:** Implement After Delete: decrement `File_Count__c`, set `Has_File__c = false` when count reaches 0
+**Step 3:** Bulkify: collect all affected message IDs, query once, update once
+**Step 4:** Test with bulk scenario (200 ContentDocumentLinks in one transaction)
+**Step 5:** Deploy: `sf apex run test --synchronous --class-names ContentDocumentLinkTriggerHandlerTest`
+**Step 6:** Commit: `feat: contentdocumentlink trigger for file count denormalization`
+
+---
+
+### Task 4.3: Inbound Media — Go Downloads from Telegram, Uploads ContentVersion via REST API
 
 **Files:**
 - Create: `internal/media/inbound.go`
 - Create: `internal/media/inbound_test.go`
 
-**Step 1:** Download media from Telegram (via adapter)
-**Step 2:** Upload to R2 with structured key: `{platform}/{chat_id}/{msg_id}/{filename}`
-**Step 3:** Store media reference in PostgreSQL media_files table
-**Step 4:** Include R2 URL in Salesforce message payload
+**Step 1:** Download media from Telegram (via adapter: MTProto getFile / Bot API file download)
+**Step 2:** Create `Messenger_Attachment__c` record via REST API
+**Step 3:** Upload file to ContentVersion via multipart (`FirstPublishLocationId` = attachment record)
+**Step 4:** Update `Messenger_Attachment__c` with `Content_Version_Id__c`, `Content_Document_Id__c`
 **Step 5:** Test end-to-end with mocks
-**Step 6:** Commit: `feat: inbound media pipeline telegram to r2`
+**Step 6:** Commit: `feat: inbound media pipeline telegram to contentversion`
 
 ---
 
-### Task 4.3: Cloudflare Worker (CDN auth)
+### Task 4.4: Outbound Media — LWC File Upload to ContentVersion, Go Queries and Sends to Telegram
 
 **Files:**
-- Create: `workers/media-proxy/index.js`
-- Create: `workers/media-proxy/wrangler.toml`
-
-**Skill:** `media-pipeline` (Worker section)
-
-**Step 1:** Implement Worker that validates HMAC-signed URLs
-**Step 2:** Proxy authenticated requests to R2
-**Step 3:** Add caching headers
-**Step 4:** Test locally with `wrangler dev`
-**Step 5:** Commit: `feat: cloudflare worker for authenticated media delivery`
-
----
-
-### Task 4.4: Outbound Media (presigned upload)
-
-**Files:**
+- Modify: `salesforce/force-app/main/default/lwc/messengerChat/`
 - Create: `internal/media/outbound.go`
 - Create: `internal/media/outbound_test.go`
 
-**Skill:** `media-pipeline` (outbound section)
-
-**Step 1:** Implement presigned PUT URL generation for LWC direct-to-R2 upload
-**Step 2:** POST endpoint: `/api/media/upload-url` returns presigned URL
-**Step 3:** After upload confirmation, forward media to Telegram
-**Step 4:** Test with mock
-**Step 5:** Commit: `feat: outbound media with presigned r2 upload`
+**Step 1:** LWC: add `lightning-file-upload` component to chat compose area, creating ContentVersion on upload
+**Step 2:** LWC: `onuploadfinished` handler creates `Messenger_Attachment__c` and notifies Go middleware (via Apex Queueable callout)
+**Step 3:** Go: receive notification with `ContentVersionId` + Telegram recipient
+**Step 4:** Go: download file via ContentVersion `VersionData` endpoint (streaming, no full file buffering)
+**Step 5:** Go: send file to Telegram via adapter (MTProto `messages.sendMedia` or Bot API `sendDocument`/`sendPhoto`)
+**Step 6:** Test with mock SF download + mock Telegram upload
+**Step 7:** Commit: `feat: outbound media pipeline contentversion to telegram`
 
 ---
 
-### Task 4.5: LWC Media Rendering
+### Task 4.5: LWC Media Rendering via `/sfc/servlet.shepherd/` URLs
 
 **Files:**
 - Modify: `salesforce/force-app/main/default/lwc/messengerChat/`
 - Create: `salesforce/force-app/main/default/lwc/messengerMediaViewer/`
 
-**Skill:** `media-pipeline` (LWC section)
-
 **Step 1:** Add media display to chat component (images, video, documents)
-**Step 2:** Use HMAC-signed Worker URLs for display
-**Step 3:** Add CSP Trusted Sites for Worker domain
-**Step 4:** Deploy and verify media renders in scratch org
-**Step 5:** Commit: `feat: lwc media rendering with authenticated urls`
+**Step 2:** Construct servlet URLs: `/sfc/servlet.shepherd/version/renditionDownload?rendition=THUMB720BY480&versionId={Content_Version_Id__c}`
+**Step 3:** Render `<img>` tags with lazy loading (`loading="lazy"`) for images; type-based rendering for video, voice, documents, stickers
+**Step 4:** No CSP Trusted Sites needed (native Salesforce URLs)
+**Step 5:** Deploy and verify media renders in scratch org
+**Step 6:** Commit: `feat: lwc media rendering with contentversion servlet urls`
 
 ---
 
@@ -480,57 +481,56 @@ func TestHealthEndpoint(t *testing.T) {
 
 ## Phase 5: Real-time Chat
 
-**Agent:** `go-backend` (Centrifugo publish), `salesforce-dev` (JWT + LWC)
-**Skills:** `centrifugo-integration`
+**Agent:** `go-backend` (Platform Event publishing), `salesforce-dev` (empApi + LWC)
+**Skills:** `salesforce-apex-patterns`, `data-ingestion`
 **Depends on:** Phase 3
 
-### Task 5.1: Centrifugo Publisher (Go side)
+### Task 5.1: Platform Event Publisher (Go side)
 
 **Files:**
-- Create: `internal/realtime/centrifugo.go`
-- Create: `internal/realtime/centrifugo_test.go`
+- Modify: `internal/salesforce/ingestion.go`
+- Create: `internal/salesforce/event_publisher.go`
+- Create: `internal/salesforce/event_publisher_test.go`
 
-**Skill:** `centrifugo-integration` — MUST invoke
-
-**Step 1:** Implement Centrifugo client using gocent v3
-**Step 2:** Method: `Publish(ctx, channel, data)` for new messages
-**Step 3:** Channel naming: `messenger:chat:{chatID}`
-**Step 4:** Test with mock Centrifugo
-**Step 5:** Commit: `feat: centrifugo publisher for real-time messages`
+**Step 1:** Implement Platform Event publishing from Go middleware via Apex REST or Composite API
+**Step 2:** Publish `Inbound_Message__e` for new messages (already partially implemented in ingester)
+**Step 3:** Publish `Session_Status__e` for connection status changes
+**Step 4:** Publish `Message_Delivery_Status__e` for delivery confirmations
+**Step 5:** Test with mock Salesforce REST API
+**Step 6:** Commit: `feat: platform event publisher for real-time updates`
 
 ---
 
-### Task 5.2: Apex JWT Token Controller
+### Task 5.2: empApi Subscription in LWC
 
 **Files:**
-- Create: `salesforce/force-app/main/default/classes/CentrifugoTokenController.cls`
-- Create: `salesforce/force-app/main/default/classes/CentrifugoTokenControllerTest.cls`
-
-**Skill:** `centrifugo-integration` (Apex JWT section — Base64Url gotcha)
-
-**Step 1:** Write test first — verify JWT structure and claims
-**Step 2:** Implement HMAC-SHA256 JWT generation with Base64Url encoding
-**Step 3:** `@AuraEnabled` method for LWC to request tokens
-**Step 4:** Deploy and test
-**Step 5:** Commit: `feat: centrifugo jwt token controller in apex`
-
----
-
-### Task 5.3: LWC WebSocket Integration
-
-**Files:**
+- Modify: `salesforce/force-app/main/default/lwc/messengerChat/`
 - Create: `salesforce/force-app/main/default/lwc/messengerLiveChat/`
 
-**Skill:** `centrifugo-integration` (LWC section)
+**Step 1:** Import `lightning/empApi` in LWC
+**Step 2:** Subscribe to `/event/tgint__Inbound_Message__e` for new messages
+**Step 3:** Subscribe to `/event/tgint__Message_Delivery_Status__e` for delivery status
+**Step 4:** Subscribe to `/event/tgint__Session_Status__e` for connection status
+**Step 5:** Display real-time messages without page refresh
+**Step 6:** No CSP Trusted Sites needed (empApi is native Salesforce)
+**Step 7:** No external auth/JWT needed (empApi uses the user's Salesforce session)
+**Step 8:** Deploy and verify live updates in scratch org
+**Step 9:** Commit: `feat: lwc real-time chat with empapi platform events`
 
-**Step 1:** Integrate Centrifugo JS SDK as static resource
-**Step 2:** Connect with getToken callback to Apex controller
-**Step 3:** Subscribe to `messenger:chat:{chatID}` channel
-**Step 4:** Display real-time messages without page refresh
-**Step 5:** Handle token refresh without reconnection
-**Step 6:** Add CSP Trusted Sites for Centrifugo domain
-**Step 7:** Deploy and verify live updates in scratch org
-**Step 8:** Commit: `feat: lwc real-time chat with centrifugo websocket`
+---
+
+### Task 5.3: empApi Error Handling and Reconnection
+
+**Files:**
+- Modify: `salesforce/force-app/main/default/lwc/messengerChat/`
+- Modify: `salesforce/force-app/main/default/lwc/messengerLiveChat/`
+
+**Step 1:** Implement `onError` handler for empApi subscription failures
+**Step 2:** Implement automatic resubscription on disconnect using `setDebugFlag(true)` for diagnostics
+**Step 3:** Handle `-1` replayId for latest events and `-2` for all retained events
+**Step 4:** Add UI feedback for connection state (connected/disconnected/reconnecting)
+**Step 5:** Test with simulated disconnect scenarios
+**Step 6:** Commit: `feat: empapi error handling and reconnection patterns`
 
 ---
 
@@ -540,9 +540,9 @@ func TestHealthEndpoint(t *testing.T) {
 - Modify: `cmd/messenger/main.go`
 - Modify: `internal/server/server.go`
 
-**Step 1:** Wire inbound message flow: Telegram → adapter → Centrifugo publish + SF ingestion
+**Step 1:** Wire inbound message flow: Telegram → adapter → Platform Event publish + SF record ingestion
 **Step 2:** Ensure both paths fire concurrently (errgroup)
-**Step 3:** Integration test: send mock Telegram update → verify Centrifugo publish + SF call
+**Step 3:** Integration test: send mock Telegram update → verify Platform Event publish + SF record creation
 **Step 4:** Commit: `feat: end-to-end inbound message pipeline`
 
 ---
@@ -700,6 +700,6 @@ Phase 1 (Foundation)
 | 2 | go-backend | — | telegram-auth-flow, rate-limiting |
 | 3 | salesforce-dev + go-backend | question-resolver | salesforce-apex-patterns, data-ingestion |
 | 4 | go-backend | salesforce-dev | media-pipeline |
-| 5 | go-backend + salesforce-dev | — | centrifugo-integration |
+| 5 | go-backend + salesforce-dev | — | salesforce-apex-patterns, data-ingestion |
 | 6 | go-backend + salesforce-dev | security-reviewer | outbound-failure-sync, rate-limiting |
 | 7 | salesforce-dev | — | salesforce-apex-patterns |

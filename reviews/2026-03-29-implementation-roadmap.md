@@ -1,3 +1,5 @@
+> **Note:** This roadmap predates ADR-20 (ContentVersion, 2026-03-30) and ADR-21 (Platform Events, 2026-04-01). Tasks referencing R2, Centrifugo, and Cloudflare Workers are no longer applicable.
+
 # MessageForge Implementation Roadmap — Agent-Executable
 
 **Created:** 2026-03-29

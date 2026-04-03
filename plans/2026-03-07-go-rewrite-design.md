@@ -1,5 +1,7 @@
 # Go Backend Rewrite — Design Document
 
+> **Note:** This plan predates ADR-20 (R2→ContentVersion) and ADR-21 (Centrifugo→Platform Events). R2 and Centrifugo references below are historical.
+
 **Date:** 2026-03-07
 **Status:** Approved
 **Scope:** Full rewrite of `backend/` Go code using squad-pattern architecture

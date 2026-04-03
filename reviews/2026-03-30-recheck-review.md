@@ -1,3 +1,5 @@
+> **Note:** This review reflects architecture as of 2026-03-30. References to R2 and Centrifugo reflect pre-ADR-20/21 findings that have been superseded.
+
 # MessageForge Recheck Review — 2026-03-30
 
 **Reviewer:** Claude Opus 4.6 (6 parallel agents)
@@ -30,7 +32,7 @@ All items claimed as RESOLVED or FIX-IN-PROGRESS were verified against actual so
 | Risk | Claimed | Verified | Evidence |
 |---|---|---|---|
 | R01 Schema mismatch | RESOLVED | **CONFIRMED** | `Messenger_Channel__c` used throughout Apex code |
-| R02 Unprotected secrets | PARTIALLY OPEN | **RESOLVED** | Both `Encryption_Key__mdt` and `Messenger_Settings__mdt` have `<visibility>Protected</visibility>` |
+| R02 Unprotected secrets | PARTIALLY OPEN | **RESOLVED** | Both `Encryption_Key__mdt` and `Messenger_Settings__mdt` have `<visibility>Protected</visibility>`. Note: Centrifugo secret no longer needed (ADR-21). |
 | R04 UNLOGGED recovery | RESOLVED | **CONFIRMED** | `session_backup.go` implements 5-min snapshots + restore-on-startup |
 | R10 API routing | RESOLVED | **CONFIRMED** | ADR-19 routing table complete with all API assignments |
 | R12 Style guide | RESOLVED | **CONFIRMED** | MessageForge-specific guide, no blockchain/TON references |
@@ -243,7 +245,7 @@ Same pattern in `outbound_worker.go:176-204`.
 **Found by:** Architect agent
 
 **What:** Two parallel inbound paths exist:
-1. **Pipeline** (real-time): Bot handler -> Pipeline -> media + Centrifugo + Ingester (no retry, no persistence)
+1. **Pipeline** (real-time): Bot handler -> Pipeline -> media + Platform Event publish + Ingester (no retry, no persistence). (**Note (ADR-21):** Centrifugo replaced by Platform Events.)
 2. **Queue Worker**: `inbound_queue` table -> QueueWorker -> Ingester (retry, SKIP LOCKED, persistent)
 
 Nothing writes to `inbound_queue`. The Pipeline handles everything while the Queue handles nothing. If Pipeline's `processMessage()` fails, the message is logged and dropped — no retry, no persistence.
@@ -417,7 +419,7 @@ The summary table at the top lists ADR-1 through ADR-17 only. ADR-18 (Session Du
 ### Salesforce Security Highlights
 
 - `HMACValidator.cls:44-54` — Custom `constantTimeEquals()` implementation verified correct
-- `CentrifugoTokenController.cls:7` — Channel name regex `^messenger:chat:[a-zA-Z0-9]{15,18}$` prevents injection
+- `CentrifugoTokenController.cls:7` — Channel name regex `^messenger:chat:[a-zA-Z0-9]{15,18}$` prevents injection. **Note (ADR-21):** Centrifugo eliminated; this controller is no longer needed. empApi replaces Centrifugo for real-time.
 - `MessengerOutboundService.cls:42` — HTTPS enforcement on Go server URL
 - `messengerChat.js:393-399` — `sanitizeMediaUrl()` blocks `javascript:`, `data:`, HTTP URLs
 - All LWC components: no `innerHTML`, no `lwc:dom="manual"`, no inline JS evaluation

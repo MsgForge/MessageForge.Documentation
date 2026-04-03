@@ -77,7 +77,7 @@ Messenger_Message__c               -- Individual message
 ├── Direction__c                   -- inbound | outbound
 ├── Message_Type__c                -- text | photo | video | voice | document | sticker | template | album
 ├── Template__c                    -- Lookup → Template (when type = template)
-├── Media_URL__c                   -- Cloudflare R2 CDN URL (primary/single attachment shortcut)
+├── Media_URL__c                   -- ContentVersion download URL via /sfc/servlet.shepherd/ (ADR-20)
 ├── Media_MIME_Type__c
 ├── Attachment_Count__c            -- Roll-Up from Messenger_Attachment__c
 ├── Delivery_Status__c             -- pending → sent → delivered → read → failed
@@ -88,7 +88,7 @@ Messenger_Message__c               -- Individual message
 
 Messenger_Attachment__c            -- Media attachment (child of Message, multi-media)
 ├── Message__c                     -- Master-Detail → Message (cascade delete)
-├── Media_URL__c                   -- Cloudflare R2 CDN URL (required)
+├── Media_URL__c                   -- ContentVersion download URL via /sfc/servlet.shepherd/ (ADR-20)
 ├── Media_MIME_Type__c             -- MIME type
 ├── File_Name__c                   -- Original filename
 ├── File_Size__c                   -- Bytes
@@ -234,7 +234,6 @@ Managed Package: "MessageForge" (namespace: tgint)
 │   ├── ChannelSetupController.cls (LWC backend — channel wizard)
 │   ├── ChannelAccessService.cls (Apex Managed Sharing)
 │   ├── EncryptionService.cls (AES-256 encrypt/decrypt)
-│   ├── CentrifugoTokenController.cls (JWT generation)
 │   └── HMACValidator.cls (shared verification)
 ├── Apex Triggers:
 │   ├── InboundMessageTrigger.trigger (PE → record creation)
@@ -245,9 +244,7 @@ Managed Package: "MessageForge" (namespace: tgint)
 ├── Lightning Web Components:
 │   ├── channelSetupWizard (admin — guided channel creation)
 │   ├── messengerChat (main chat UI)
-│   ├── messengerLiveChat (Centrifugo wrapper)
-│   ├── messengerMediaViewer (R2/CDN media lightbox)
-│   └── centrifugoClient (service module)
+│   └── messengerMediaViewer (ContentVersion media lightbox)
 ├── Permission Sets:
 │   ├── tgint__Messenger_Admin (full CRUD on channels, configs, apps, audit)
 │   ├── tgint__Messenger_Agent (chat + message CRUD, limited channel read)
@@ -255,6 +252,5 @@ Managed Package: "MessageForge" (namespace: tgint)
 ├── Connected App:
 │   └── Messenger_Go_Server (OAuth 2.0)
 └── CSP Trusted Sites:
-    ├── Centrifugo WebSocket domain
-    └── Cloudflare Worker CDN domain
+    └── Go middleware domain (for Apex callouts)
 ```

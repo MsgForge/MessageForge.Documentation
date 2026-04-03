@@ -1,6 +1,6 @@
 # Security Checklist
 
-> Last audited: 2026-03-07 (Phase 6.4 security review)
+> Last audited: 2026-03-07 | Updated 2026-04-03 (post-ADR-20/21)
 
 ## Transport Security
 
@@ -33,7 +33,7 @@
 - [x] HMAC middleware body size limit: 10 MB (`middleware.go`)
 - [x] Bot API handler body size limit: 1 MB (`handlers.go`)
 - [x] Constant-time HMAC comparison (`hmac.Equal`)
-- [x] CF Worker timing-safe comparison (no length leak)
+- ~~[x] CF Worker timing-safe comparison (no length leak)~~ — HISTORICAL (ADR-20: Cloudflare Workers removed)
 
 ## Credential Storage
 
@@ -48,29 +48,17 @@
 - [x] sync.Pool buffers zeroed after use (`ingestion.go`) — prevents credential leakage
 - [x] No sensitive data in error messages returned to clients
 
-## Media Security
+## Media Security (ADR-20: ContentVersion)
 
-- [ ] R2 bucket strictly private (no public access)
-- [x] Inbound media: HMAC-signed tokens with expiration at Cloudflare Worker edge
-- [x] Outbound media: Presigned URL generation enforces Content-Type binding
-- [x] Presigned URL expiration capped: GET ≤ 60 min, PUT ≤ 15 min (`r2.go` TTL caps)
-- [x] UUID object keys (prevent enumeration)
+- [ ] ContentVersion file sharing rules configured (OWD, sharing sets)
+- [ ] ContentDocumentLink visibility set appropriately per record
+- [ ] Media files accessible only via authenticated `/sfc/servlet.shepherd/` URLs
+- [ ] File size limits enforced on upload (Apex/Go validation)
+- [ ] MIME type validation on upload (prevent executable uploads)
 
 ## CORS Security
 
-- [x] CF Worker CORS restricted to Salesforce domains only (`*.lightning.force.com`, `*.visualforce.com`, `*.salesforce.com`)
-- [ ] R2 CORS policy configured for Salesforce instance domain (PUT, ETag exposure)
-- [ ] CSP Trusted Sites configured for R2 endpoint domain (`connect-src` directive)
-- [ ] CSP Trusted Sites configured for Centrifugo WebSocket domain
-- [ ] CSP Trusted Sites configured for Cloudflare Worker CDN domain
-
-## Centrifugo Security
-
-- [x] JWT tokens short-lived (15 min TTL)
-- [x] LWC refresh callback implemented (no stale connections)
-- [ ] Shared secret in Protected Custom Metadata Type (symmetric)
-- [ ] Or: Self-Signed Certificate HSM (asymmetric)
-- [x] Apex JWT generation uses Base64Url encoding (not standard Base64)
+- [ ] CSP Trusted Sites configured for Go middleware domain (Apex callouts)
 
 ## Data Pipeline Security
 
@@ -97,10 +85,7 @@
 
 | Token | TTL | System | Notes |
 |---|---|---|---|
-| Centrifugo JWT | 15 min | LWC → Centrifugo WebSocket | LWC refresh callback renews before expiry (ADR-13) |
 | Salesforce OAuth | 90 min | Go → Salesforce REST API | Auto-refresh with double-check locking (`auth.go`) |
-| R2 Presigned URL (inbound) | 60 min | Cloudflare Worker → R2 GET | HMAC-signed at Worker edge |
-| R2 Presigned URL (outbound) | 15 min | LWC → R2 PUT | Short-lived, Content-Type bound (ADR-14) |
 
 ## Audit Trail
 
@@ -108,6 +93,6 @@
 |------|---------|--------|
 | 2026-03-07 | HMAC middleware missing body size limit | FIXED |
 | 2026-03-07 | sync.Pool buffers not zeroed | FIXED |
-| 2026-03-07 | CF Worker CORS open to all origins | FIXED |
-| 2026-03-07 | CF Worker timingSafeEqual length leak | FIXED |
+| 2026-03-07 | ~~CF Worker CORS open to all origins~~ | ~~FIXED~~ — HISTORICAL (ADR-20: Cloudflare Workers removed) |
+| 2026-03-07 | ~~CF Worker timingSafeEqual length leak~~ | ~~FIXED~~ — HISTORICAL (ADR-20: Cloudflare Workers removed) |
 | 2026-03-07 | Go server no TLS | DOCUMENTED (reverse proxy required) |

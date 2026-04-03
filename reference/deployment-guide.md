@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-03-29
 
-This guide covers deploying MessageForge Backend to production on a Hetzner VPS with PostgreSQL, Centrifugo WebSocket server, and Caddy reverse proxy with automatic TLS.
+This guide covers deploying MessageForge Backend to production on a Hetzner VPS with PostgreSQL and Caddy reverse proxy with automatic TLS.
 
 ## Table of Contents
 
@@ -10,12 +10,10 @@ This guide covers deploying MessageForge Backend to production on a Hetzner VPS 
 2. [Server Provisioning](#server-provisioning)
 3. [PostgreSQL Configuration](#postgresql-configuration)
 4. [Go Application Setup](#go-application-setup)
-5. [Centrifugo WebSocket Server](#centrifugo-websocket-server)
-6. [Caddy Reverse Proxy](#caddy-reverse-proxy)
-7. [Cloudflare R2 Media Storage](#cloudflare-r2-media-storage)
-8. [Environment Configuration](#environment-configuration)
-9. [First-Run Checklist](#first-run-checklist)
-10. [Monitoring & Maintenance](#monitoring--maintenance)
+5. [Caddy Reverse Proxy](#caddy-reverse-proxy)
+6. [Environment Configuration](#environment-configuration)
+7. [First-Run Checklist](#first-run-checklist)
+8. [Monitoring & Maintenance](#monitoring--maintenance)
 
 ## Infrastructure Setup
 
@@ -45,7 +43,6 @@ Configure Hetzner Cloud Firewall:
 | TCP | 80 | 0.0.0.0/0 | HTTP (Caddy auto-redirect) |
 | TCP | 443 | 0.0.0.0/0 | HTTPS (Caddy TLS) |
 | TCP | 8080 | localhost only | Go backend (internal) |
-| TCP | 8000 | localhost only | Centrifugo (internal) |
 
 ## Server Provisioning
 
@@ -243,8 +240,8 @@ Create `/etc/systemd/system/messageforge-backend.service`:
 [Unit]
 Description=MessageForge Backend Service
 Documentation=https://github.com/your-org/messageforge
-After=network.target postgresql.service centrifugo.service
-Wants=postgresql.service centrifugo.service
+After=network.target postgresql.service
+Wants=postgresql.service
 
 [Service]
 Type=simple
@@ -306,114 +303,9 @@ echo "Deployment complete"
 
 Make it executable and add to crontab or use a webhook trigger.
 
-## Centrifugo WebSocket Server
-
-Centrifugo handles real-time bidirectional communication between browsers and the Go backend.
-
-### 1. Install Centrifugo
-
-```bash
-# Download latest Centrifugo ARM64 binary
-cd /tmp
-wget https://github.com/centrifugal/centrifugo/releases/download/v6.4.0/centrifugo-6.4.0-linux-arm64.tar.gz
-tar xzf centrifugo-6.4.0-linux-arm64.tar.gz
-
-# Install to system path
-sudo mv centrifugo /usr/local/bin/
-sudo chmod +x /usr/local/bin/centrifugo
-
-# Verify installation
-centrifugo version
-```
-
-### 2. Create Centrifugo Configuration
-
-Create `/etc/centrifugo/config.json`:
-
-```bash
-sudo mkdir -p /etc/centrifugo
-sudo tee /etc/centrifugo/config.json > /dev/null <<'EOF'
-{
-  "v3_use_offset": true,
-  "token_hmac_secret_key": "your-hmac-secret-change-this",
-  "api_key": "your-api-key-change-this",
-  "admin": true,
-  "admin_password": "your-admin-password-change-this",
-  "admin_secret": "your-admin-secret-change-this",
-  "api_insecure": false,
-  "namespaces": [
-    {
-      "name": "messenger",
-      "presence": true,
-      "join_leave": true,
-      "history": {
-        "max_meta_size": 4096
-      }
-    }
-  ],
-  "allowed_origins": [
-    "https://yourdomain.com",
-    "https://app.yourdomain.com"
-  ]
-}
-EOF
-
-sudo chown -R nobody:nogroup /etc/centrifugo
-```
-
-**Important:** Change all secrets and passwords in production.
-
-### 3. Create systemd Service File
-
-Create `/etc/systemd/system/messageforge-centrifugo.service`:
-
-```ini
-[Unit]
-Description=Centrifugo WebSocket Server
-Documentation=https://centrifugal.dev
-After=network.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=nobody
-Group=nogroup
-WorkingDirectory=/etc/centrifugo
-ExecStart=/usr/local/bin/centrifugo --config=config.json --admin --health
-
-Restart=on-failure
-RestartSec=10s
-KillMode=process
-
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=centrifugo
-
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable messageforge-centrifugo
-sudo systemctl start messageforge-centrifugo
-sudo systemctl status messageforge-centrifugo
-```
-
-### 4. Verify Centrifugo Health
-
-```bash
-# Check health endpoint
-curl http://localhost:8000/health
-
-# Expected response:
-# {"version":"6.4.0","result":{}}
-```
-
 ## Caddy Reverse Proxy
 
-Caddy automatically manages TLS certificates via Let's Encrypt and handles reverse proxying to the Go backend and Centrifugo server.
+Caddy automatically manages TLS certificates via Let's Encrypt and handles reverse proxying to the Go backend.
 
 ### 1. Install Caddy
 
@@ -443,31 +335,6 @@ yourdomain.com {
       header_up X-Forwarded-For {remote_host}
       header_up X-Forwarded-Proto {scheme}
       header_up X-Forwarded-Host {host}
-    }
-  }
-
-  # WebSocket endpoints
-  @ws_paths {
-    path /socket/websocket
-    path /.well-known/centrifugo/*
-  }
-  handle @ws_paths {
-    reverse_proxy localhost:8000 {
-      header_up Connection "upgrade"
-      header_up Upgrade "websocket"
-      header_up X-Forwarded-For {remote_host}
-      header_up X-Forwarded-Proto {scheme}
-    }
-  }
-
-  # Admin panel (optional, restrict to specific IPs in production)
-  @admin_paths {
-    path /admin/*
-  }
-  handle @admin_paths {
-    reverse_proxy localhost:8000 {
-      header_up X-Forwarded-For {remote_host}
-      header_up X-Forwarded-Proto {scheme}
     }
   }
 
@@ -541,98 +408,6 @@ Verify:
 curl https://yourdomain.com/health
 ```
 
-## Cloudflare R2 Media Storage
-
-R2 stores all message media (images, videos, documents) outside of Salesforce to avoid governor limits.
-
-### 1. Create R2 Bucket
-
-1. Log in to Cloudflare dashboard
-2. Navigate to **R2 Storage** → **Create bucket**
-3. Bucket name: `messageforge-media` (or your preference)
-4. Choose a region (recommend closest to your users)
-5. Create bucket
-
-### 2. Create R2 API Token
-
-1. Go to **R2** → **Settings** → **API tokens**
-2. Click **Create API token**
-3. Set permissions to:
-   - **Bucket permissions:** Object Read, Object Write, Object Delete
-   - **Bucket resources:** Specific bucket → `messageforge-media`
-4. Copy Account ID, Access Key ID, and Secret Access Key
-
-### 3. Deploy Cloudflare Worker for CDN
-
-Create `/tmp/worker.js`:
-
-```javascript
-export default {
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    // Extract media ID from path: /media/:id
-    const mediaId = url.pathname.split('/').pop();
-
-    if (!mediaId) {
-      return new Response('Not Found', { status: 404 });
-    }
-
-    // Fetch from R2
-    const r2Response = await fetch(
-      `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${mediaId}`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${R2_TOKEN}`,
-        },
-      }
-    );
-
-    if (!r2Response.ok) {
-      return new Response('Not Found', { status: 404 });
-    }
-
-    // Cache for 30 days
-    const response = new Response(r2Response.body, r2Response);
-    response.headers.set('Cache-Control', 'public, max-age=2592000');
-    response.headers.set('Access-Control-Allow-Origin', '*');
-
-    return response;
-  },
-};
-```
-
-Deploy with Wrangler:
-
-```bash
-npm install -D wrangler
-wrangler deploy worker.js
-```
-
-### 4. Configure R2 CORS
-
-```bash
-# Create CORS config
-cat > /tmp/cors.json <<'EOF'
-[
-  {
-    "AllowedOrigins": ["https://yourdomain.com"],
-    "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-    "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag", "x-amz-meta-custom-header"],
-    "MaxAgeSeconds": 3000
-  }
-]
-EOF
-
-# Apply CORS using s3cmd or AWS CLI v2
-aws s3api put-bucket-cors \
-  --bucket "messageforge-media" \
-  --cors-configuration file:///tmp/cors.json \
-  --endpoint-url https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/r2/buckets
-```
-
 ## Environment Configuration
 
 ### Create `.env` File
@@ -656,17 +431,6 @@ SF_PRIVATE_KEY=your-private-key
 # Telegram
 TELEGRAM_API_ID=your-api-id
 TELEGRAM_API_HASH=your-api-hash
-
-# Cloudflare R2
-R2_ACCOUNT_ID=your-account-id
-R2_ACCESS_KEY_ID=your-access-key-id
-R2_SECRET_ACCESS_KEY=your-secret-access-key
-R2_BUCKET_NAME=messageforge-media
-
-# Centrifugo
-CENTRIFUGO_URL=http://localhost:8000
-CENTRIFUGO_API_KEY=your-api-key-from-centrifugo-config
-CENTRIFUGO_SECRET=your-hmac-secret-from-centrifugo-config
 
 # Webhook Authentication
 WEBHOOK_SECRET=your-hmac-secret-for-salesforce-webhooks
@@ -704,17 +468,6 @@ SF_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY---
 TELEGRAM_API_ID=your-api-id
 TELEGRAM_API_HASH=your-api-hash
 
-# Cloudflare R2 Configuration (for media storage)
-R2_ACCOUNT_ID=your-cloudflare-account-id
-R2_ACCESS_KEY_ID=your-r2-access-key-id
-R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
-R2_BUCKET_NAME=messageforge-media
-
-# Centrifugo WebSocket Configuration
-CENTRIFUGO_URL=http://localhost:8000
-CENTRIFUGO_API_KEY=your-centrifugo-api-key
-CENTRIFUGO_SECRET=your-centrifugo-hmac-secret
-
 # Webhook Authentication (for Salesforce platform event triggers)
 WEBHOOK_SECRET=your-hmac-secret-for-webhooks
 
@@ -730,7 +483,6 @@ Follow this checklist to bring up a complete production environment from scratch
 
 - [ ] Domain registered and DNS provider access available
 - [ ] Hetzner account created
-- [ ] Cloudflare account with R2 access
 - [ ] Telegram API credentials obtained
 - [ ] Salesforce OAuth credentials prepared
 - [ ] SSH key pair generated (`ssh-keygen -t ed25519`)
@@ -762,14 +514,6 @@ Follow this checklist to bring up a complete production environment from scratch
 - [ ] systemd service created and enabled
 - [ ] Service started and tested: `systemctl status messageforge-backend`
 
-### WebSocket Server Setup
-
-- [ ] Centrifugo v6 installed
-- [ ] Configuration created at `/etc/centrifugo/config.json`
-- [ ] Secrets changed from defaults
-- [ ] systemd service created and enabled
-- [ ] Health check passing: `curl http://localhost:8000/health`
-
 ### Reverse Proxy & TLS
 
 - [ ] Caddy installed
@@ -780,18 +524,9 @@ Follow this checklist to bring up a complete production environment from scratch
 - [ ] HTTPS working: `curl https://yourdomain.com/health`
 - [ ] Let's Encrypt certificate auto-renewed (check in 3 months)
 
-### Media Storage
-
-- [ ] R2 bucket created
-- [ ] R2 API credentials generated
-- [ ] Credentials added to `.env`
-- [ ] Cloudflare Worker deployed (optional but recommended)
-- [ ] CORS policy configured
-
 ### Final Verification
 
 - [ ] Go backend responding: `curl https://yourdomain.com/health`
-- [ ] Centrifugo responding: `curl https://yourdomain.com/socket/websocket`
 - [ ] PostgreSQL connected and accepting queries
 - [ ] Logs clean (no errors): `journalctl -u messageforge-backend -f`
 - [ ] Load test passed (simulate expected message volume)
@@ -828,9 +563,6 @@ View service logs:
 # MessageForge backend
 sudo journalctl -u messageforge-backend -f
 
-# Centrifugo
-sudo journalctl -u messageforge-centrifugo -f
-
 # Caddy
 sudo journalctl -u caddy -f
 
@@ -858,13 +590,11 @@ sudo apt install rsyslog
 
 **Monthly:**
 - Update system packages: `sudo apt update && sudo apt upgrade`
-- Rotate R2 credentials
 - Test backup restoration on test database
 - Review PostgreSQL slow query logs
 
 **Quarterly:**
 - Update Go runtime to latest stable version
-- Update Centrifugo to latest stable version
 - Review and rotate all secrets
 - Conduct security audit
 
@@ -906,9 +636,7 @@ When message volume grows:
 
 - [Hetzner Cloud Documentation](https://docs.hetzner.cloud/)
 - [PostgreSQL 17 Documentation](https://www.postgresql.org/docs/current/)
-- [Centrifugo Documentation](https://centrifugal.dev/docs)
 - [Caddy Documentation](https://caddyserver.com/docs/)
-- [Cloudflare R2 Documentation](https://developers.cloudflare.com/r2/)
 
 ## Support
 

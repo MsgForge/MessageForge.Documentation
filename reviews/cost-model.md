@@ -5,9 +5,9 @@
 This document models infrastructure and operational costs across three deployment tiers: MVP, Growth, and Scale. Costs are primarily driven by:
 
 1. **Compute** (VPS hosting)
-2. **Storage** (PostgreSQL, R2 media)
+2. **Storage** (PostgreSQL, Salesforce ContentVersion)
 3. **Network** (proxies for Telegram rate limit management)
-4. **CDN** (Cloudflare Workers for media delivery)
+4. **Salesforce file storage** (ContentVersion, included in subscriber's org allocation)
 
 ## Key Assumptions
 
@@ -16,7 +16,8 @@ This document models infrastructure and operational costs across three deploymen
 - Monthly recurring costs (no one-time setup fees included)
 - Assumes Bot API-only channels for MVP/Growth; MTProto for Growth/Scale
 - VPS self-hosted database for MVP/Growth; managed for Scale
-- Cloudflare free tier sufficient for MVP/Growth
+- Platform Events (empApi) for real-time LWC updates (included in Salesforce license)
+- All media stored in Salesforce ContentVersion ($5/GB/month, included in subscriber's org allocation)
 - No Salesforce Platform Event overage fees (within normal allocation)
 
 ---
@@ -34,10 +35,7 @@ This document models infrastructure and operational costs across three deploymen
 | **PostgreSQL** | Self-hosted | On VPS | €0 | No separate managed service |
 | **Backups** | Local | Daily snapshots to S3 | ~€1-2 | Optional, estimated ~5GB/month |
 | **Residential Proxies** | SmartProxy/IPRoyal | 5 dedicated IPs | €25-40 | For Bot API rotation (Bot API has lower rate limits) |
-| **R2 Storage** | Cloudflare | ~1GB media/month | €0 | Free tier (first 10GB/month) |
-| **R2 Bandwidth** | Cloudflare | <10GB egress/month | €0 | Free tier (first 1GB/day) |
-| **Workers** | Cloudflare | <100K requests/day | €0 | Free tier (10M req/month) |
-| **CDN Cache** | Cloudflare | Included | €0 | Free Argo Smart Routing |
+| **Media Storage** | Salesforce | ContentVersion (Files) | €0 | Included in subscriber's org file storage allocation |
 | **Domain + DNS** | Registrar | 1 domain .com/.io | ~€10/year | ~€0.83/month |
 | **SSL/TLS** | Let's Encrypt | Via Caddy | €0 | Automatic, free |
 | **Monitoring** | (Optional) | Uptime.com free tier | €0 | Or omit for MVP |
@@ -49,7 +47,7 @@ This document models infrastructure and operational costs across three deploymen
 - **Proxies dominate**: 5 IPs @ €5-8/IP = bulk of non-infrastructure cost
 - **Compute is minimal**: CAX11 easily handles 10 channels
 - **Storage negligible**: <10GB/month media, self-hosted DB
-- **Network costs zero**: Cloudflare free tier sufficient
+- **Network costs minimal**: only VPS egress
 
 ### Optimization Options
 
@@ -72,10 +70,7 @@ This document models infrastructure and operational costs across three deploymen
 | **PostgreSQL** | Self-hosted | On VPS | €0 | Still manageable on CAX21 |
 | **Backups** | AWS S3 | Daily snapshots | ~€3-5 | ~50GB/month storage + transfer |
 | **Residential Proxies** | Bright Data/SmartProxy | 50 dedicated IPs | €250-500 | MTProto introduces rotation need |
-| **R2 Storage** | Cloudflare | ~10GB/month | ~€1.50 | 50 IPs × 200KB avg image = ~10GB/month |
-| **R2 Bandwidth** | Cloudflare | 100GB egress/month | ~€5 | Worker-cached delivery; 100GB reasonable |
-| **Workers** | Cloudflare | ~500K requests/day | ~€5 | Above free tier; ~$0.50/M requests |
-| **CDN** | Cloudflare | Pro plan | €20 | For analytics, custom SSL, page rules |
+| **Media Storage** | Salesforce | ContentVersion (Files) | €0 | Included in subscriber's org file storage allocation |
 | **Domain + DNS** | Registrar | 1 domain | €10/year | €0.83/month |
 | **SSL/TLS** | Let's Encrypt | Via Caddy | €0 | Automatic |
 | **Monitoring** | Better Stack | Basic plan | ~€15/month | Recommended for production |
@@ -88,9 +83,8 @@ This document models infrastructure and operational costs across three deploymen
   - Required for MTProto multi-user scenarios
   - Reduces Telegram's connection/login rate limits
   - SmartProxy, IPRoyal, Bright Data all viable
-- **Workers + R2**: ~€10-11 (manageable)
+- **Media storage**: €0 (Salesforce ContentVersion, included in subscriber's org allocation)
 - **Monitoring**: ~€15 (recommended for production SLA)
-- **CDN Pro**: €20 (optional but recommended for analytics)
 
 ### Optimization Options
 
@@ -123,11 +117,7 @@ This document models infrastructure and operational costs across three deploymen
 | **Backups** | Hetzner | Managed + snapshots | €5 | Included with managed DB + snapshots |
 | **Redis** | Self-hosted on VPS | For rate limiting cache | €0 | Distributed session + limit state |
 | **Residential Proxies** | Bright Data | 200 dedicated IPs | €1,000-2,000 | MTProto multi-user, aggressive rotation |
-| **R2 Storage** | Cloudflare | ~50GB/month | ~€7.50 | 500 channels × 100KB avg media |
-| **R2 Bandwidth** | Cloudflare | 500GB egress/month | ~€20 | Worker-cached; still <1GB/day per channel |
-| **Workers** | Cloudflare | ~2M requests/day | ~€15 | ~$0.50/M requests above free tier |
-| **Workers KV** | Cloudflare | Rate limit state | ~€5 | Optional, for distributed rate limiting |
-| **CDN** | Cloudflare | Business plan | €200 | Enterprise analytics, custom SSL, priority support |
+| **Media Storage** | Salesforce | ContentVersion (Files) | €0 | Included in subscriber's org allocation; excess at $5/GB/month |
 | **Domain + DNS** | Registrar | 1 domain | €10/year | €0.83/month |
 | **Monitoring** | Datadog/New Relic | Standard plan | €40-50/month | Logs, metrics, distributed tracing |
 | **Load Balancing** | Hetzner | (optional) | €15 | For HA across multiple backends |
@@ -143,7 +133,7 @@ This document models infrastructure and operational costs across three deploymen
   - Bright Data + SmartProxy typically cheapest at volume
 - **Managed PostgreSQL**: €30 (justified by reliability/uptime SLA)
 - **Infrastructure**: €67 (VPS + backups + Redis)
-- **CDN/Workers**: €42-45 (negligible at this scale)
+- **Media storage**: €0 (Salesforce ContentVersion, included in subscriber's org; excess at $5/GB/month)
 - **Monitoring**: €40-50 (critical for enterprise SLA)
 
 ### Optimization Options
@@ -162,7 +152,7 @@ For enterprise SLA (99.9% uptime):
 | **Second VPS** | Hetzner | +€16 |
 | **Managed PostgreSQL HA** | Hetzner | +€20 (standby) |
 | **Load Balancer** | Hetzner | +€15 |
-| **CDN Enterprise** | Cloudflare | +€100 → €300/month |
+| **Additional File Storage** | Salesforce | +$5/GB/month (if exceeding org allocation) |
 | **Monitoring + Alerts** | Datadog | +€50 → €100/month |
 | | | |
 | **HA Monthly Overhead** | | **+€150-200** |
@@ -179,7 +169,7 @@ For enterprise SLA (99.9% uptime):
 | Growth | €298-549 | 100 | **€2.98-5.49** |
 | Scale | €1,353-2,354 | 500 | **€2.71-4.71** |
 
-**Observation:** Per-channel cost *decreases* as you scale (economies of scale), but only because compute/storage scale sub-linearly. Proxies scale *linearly* with channels using MTProto.
+**Observation:** Per-channel cost *decreases* as you scale (economies of scale), but only because compute/storage scale sub-linearly. Proxies scale *linearly* with channels using MTProto. Media storage is included in the subscriber's Salesforce org file allocation (ADR-20).
 
 ### Cost Per Message
 
@@ -227,7 +217,7 @@ These are project-specific and omitted from baseline model:
 |------|---|---|
 | **Salesforce licenses** | $125/user/month | If deploying as AppExchange package |
 | **SIEM/Security** | $50-500/month | For compliance (SOC 2, HIPAA) |
-| **DDoS protection** | $200-1,000/month | If under attack; usually free via Cloudflare |
+| **DDoS protection** | $200-1,000/month | If under attack |
 | **Datadog/New Relic** | $20-100/month | If moving beyond Better Stack |
 | **Legal/Compliance** | ~€1,000 one-time | AppExchange security review |
 | **Ops team** | €3,000-5,000/month | For enterprise SLA (not in cost model) |
@@ -302,13 +292,12 @@ For pricing customers per channel:
 
 1. **Negotiate proxy bulk discounts** (10%+ at 100+ IPs): saves €50-200/month
 2. **Consolidate to single Salesforce org** (avoid Platform Event overage): saves €0-500/month
-3. **Use CloudFlare Argo Smart Routing** (auto-enabled free): saves €15-30/month vs. standard routing
-4. **Implement aggressive caching** (Centrifugo presence, rate-limit state): reduces DB load
+3. **Implement aggressive caching** (rate-limit state, session cache): reduces DB load
 
 ### Medium-term (1-3 months)
 
 1. **Migrate to managed PostgreSQL only if hitting resource limits**: +€15 but -€5 in ops overhead
-2. **Implement Redis on VPS** for distributed rate limiting: +€0 but -€10 in Workers KV
+2. **Implement Redis on VPS** for distributed rate limiting: +€0 (reduces DB load)
 3. **Regional proxy providers**: Bright Data US West costs 20% less than US East; pick nearest
 
 ### Long-term (3-12 months)

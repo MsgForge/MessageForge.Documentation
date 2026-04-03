@@ -7,11 +7,8 @@ A Go middleware server bridges messaging platforms (Telegram, WhatsApp, Viber, S
 | Component | Role |
 |---|---|
 | Go Middleware | Multi-platform protocol handler (MTProto, Bot API, Cloud API, REST, MSP), message routing, media processing, queue management |
-| PostgreSQL | Session storage, message queues, connection registry, media refs, rate limit state |
-| Salesforce | CRM data store, user interface (LWC), business logic (Apex), event bus, credential storage (encrypted) |
-| Cloudflare R2 | Media file storage (images, video, voice, documents) |
-| Cloudflare Workers | Edge reverse proxy for secure, cached media delivery |
-| Centrifugo | Real-time WebSocket server for live chat UI updates |
+| PostgreSQL | Session storage, message queues, connection registry, rate limit state |
+| Salesforce | CRM data store, user interface (LWC), business logic (Apex), event bus, credential storage (encrypted), media storage (ContentVersion) |
 
 ## Data Flow
 
@@ -28,24 +25,27 @@ A Go middleware server bridges messaging platforms (Telegram, WhatsApp, Viber, S
                     ┌──────▼───────┐         ┌──────────────┐
                     │     Go       │◄───────►│  PostgreSQL   │
                     │  Middleware  │         │  (sessions,   │
-                    └──┬───┬───┬──┘         │   queues)     │
-                       │   │   │            └──────────────┘
-              ┌────────┘   │   └────────┐
-              │            │            │
-      ┌───────▼──┐  ┌──────▼─────┐  ┌──▼──────────┐
-      │Cloudflare│  │ Salesforce  │  │ Centrifugo   │
-      │   R2     │  │ (REST/gRPC) │  │ (WebSocket)  │
-      │ (media)  │  └──────┬─────┘  └──────┬───────┘
-      └────┬─────┘         │               │
-           │        ┌──────▼─────┐         │
-           │        │   Apex     │         │
-           │        │  Triggers  │         │
-           │        └──────┬─────┘         │
-           │               │               │
-      ┌────▼───┐    ┌──────▼─────┐         │
-      │Workers │    │    LWC     │◄────────┘
-      │ (CDN)  │───►│ (Browser)  │
-      └────────┘    └────────────┘
+                    └──────┬──────┘         │   queues)     │
+                           │               └──────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │ Salesforce  │
+                    │ (REST/PE)   │
+                    └──┬───┬───┬──┘
+                       │   │   │
+          ┌────────────┘   │   └────────────┐
+          │                │                │
+   ┌──────▼──────┐  ┌─────▼──────┐  ┌──────▼─────────┐
+   │   Apex      │  │ Platform   │  │ ContentVersion │
+   │  Triggers   │  │ Events     │  │ (media files)  │
+   └──────┬──────┘  └─────┬──────┘  └──────┬─────────┘
+          │               │ (empApi)        │
+          └───────┐  ┌────┘         ┌──────┘
+                  ▼  ▼              ▼
+              ┌─────────────────────┐
+              │      LWC            │
+              │   (Browser)         │
+              └─────────────────────┘
 ```
 
 ## What Lives Where
@@ -59,7 +59,7 @@ A Go middleware server bridges messaging platforms (Telegram, WhatsApp, Viber, S
 | WhatsApp webhooks | `whatsapp_webhooks` | Webhook registrations, verify tokens |
 | Inbound queue | `inbound_queue` | Messages awaiting Salesforce delivery |
 | Outbound queue | `outbound_queue` | Messages awaiting platform sending |
-| Media references | `media_files` | R2 object keys, platform file IDs, MIME types |
+| Media references | _(Salesforce ContentVersion)_ | Media metadata stored in SF, not PostgreSQL (ADR-20) |
 | Rate limit state | `rate_limit_buckets` | Per-account, per-bot token buckets |
 | Connection registry | `connections` | All active connections, mapped to SF Channel ID |
 | Proxy assignments | `proxy_pool` | Residential proxy IPs per MTProto session |
@@ -83,9 +83,9 @@ A Go middleware server bridges messaging platforms (Telegram, WhatsApp, Viber, S
 | AES key | `Encryption_Key__mdt` | Protected CMT — invisible to customer |
 | Apple MSP creds | `Apple_MSP__mdt` | Protected CMT — our Apple credentials |
 
-### Cloudflare R2
+### Media Storage (Salesforce ContentVersion)
 
-All media files. Never stored in Salesforce. Zero egress fees.
+All media files are stored as Salesforce ContentVersion records. Files are linked to Message/Attachment records via ContentDocumentLink. Accessed in LWC via native `/sfc/servlet.shepherd/` URLs with session-based authentication (ADR-20).
 
 ## Multi-Platform Support
 

@@ -1,3 +1,5 @@
+> **Note:** This review predates ADR-20 (ContentVersion, 2026-03-30) and ADR-21 (Platform Events, 2026-04-01). References to R2, Centrifugo, and Cloudflare Workers reflect the architecture as of 2026-03-29 and are no longer current.
+
 # MessageForge Architecture Review — 2026-03-29
 
 **Reviewer:** Claude Opus 4.6 (automated deep review)
@@ -30,9 +32,9 @@ MessageForge is a multi-messenger to Salesforce CRM integration platform. The ar
 1. **Architecture is sound.** The three-layer model (Channel -> Config -> App), adapter pattern for multi-platform, and Go middleware as protocol bridge are all correct choices.
 
 2. **ADRs cover the hard decisions.** 17 ADRs with clear rationale. Key wins:
-   - ADR-4: Centrifugo over Platform Events for live chat (avoids 50K/24h delivery limit)
+   - ADR-4: ~~Centrifugo over Platform Events for live chat~~ **SUPERSEDED by ADR-21:** Platform Events (empApi) now used for real-time LWC updates
    - ADR-10: Messenger-agnostic interfaces (avoids restructuring for WhatsApp)
-   - ADR-14: Direct-to-R2 presigned URLs (avoids SF storage quota)
+   - ADR-14: ~~Direct-to-R2 presigned URLs~~ **SUPERSEDED by ADR-20:** All media now stored in Salesforce ContentVersion
    - ADR-17: sync.Pool + streaming JSON (prevents GC thrashing at scale)
 
 3. **Research is comprehensive.** 4 research documents (1,200+ lines of technical specification) cover every edge case: SRP v6a crypto, Centrifugo JWT gotchas, R2 CORS bilateral config, Platform Event delivery math.
@@ -121,7 +123,7 @@ Only `CLAUDE.md` placeholder. No code, no design, no spec.
 
 #### C2: Middleware_Config__mdt is NOT Protected
 
-**What:** `Middleware_Config__mdt` stores HMAC secrets and Centrifugo tokens. It is a regular Custom Metadata Type, not Protected. Any admin or developer in the customer org can query `Middleware_Config__mdt.getInstance('Default')` and read all secrets.
+**What:** `Middleware_Config__mdt` stores HMAC secrets and Centrifugo tokens. It is a regular Custom Metadata Type, not Protected. Any admin or developer in the customer org can query `Middleware_Config__mdt.getInstance('Default')` and read all secrets. (**Note (ADR-21):** Centrifugo tokens no longer needed; Centrifugo eliminated in favor of Platform Events.)
 
 **Impact:** AppExchange security review will FAIL. Credential exposure to customer org users.
 
@@ -154,7 +156,7 @@ Only `CLAUDE.md` placeholder. No code, no design, no spec.
 
 **Impact:** Go process crash = all messaging stops. No redundancy.
 
-**Missing:** Deployment guide, HA architecture, health check integration, auto-restart mechanism.
+**Missing:** Deployment guide, HA architecture, health check integration, auto-restart mechanism. (**Note:** ADR-20 and ADR-21 simplified deployment — no R2, Workers, or Centrifugo to deploy.)
 
 #### C6: Residential Proxy Pool — Unchecked and Uncosted
 
@@ -228,15 +230,17 @@ No mention of: Prometheus metrics, structured log aggregation, alerting rules, S
 
 ### A4: No Cost Model
 
-No pricing analysis for: Hetzner VPS, residential proxies, Salesforce Enterprise licenses, Cloudflare R2 storage, Centrifugo hosting, domain/SSL certificates.
+No pricing analysis for: Hetzner VPS, residential proxies, Salesforce Enterprise licenses, domain/SSL certificates. (**Note:** ADR-20/ADR-21 eliminated R2 and Centrifugo costs.)
 
 **Impact:** Startup can't project burn rate, can't price the product, can't determine viable customer tier.
 
 ### A5: No Deployment Guide
 
-No documentation for: how to deploy Go to Hetzner, how to configure TLS termination, how to run database migrations, how to set up Centrifugo in production, how to configure Cloudflare Workers/R2.
+No documentation for: how to deploy Go to Hetzner, how to configure TLS termination, how to run database migrations. (**Note:** ADR-20 and ADR-21 eliminated Centrifugo and Cloudflare R2/Workers, simplifying deployment requirements.)
 
 ### A6: JWT TTL Discrepancy
+
+> **Note (ADR-21):** Centrifugo eliminated. The Centrifugo JWT TTL concern is no longer relevant. Only Salesforce OAuth token TTL (90 min) remains.
 
 ADR-13 says Centrifugo JWTs are "15 min TTL." Security checklist mentions "90-min TTL." These are likely different systems (Centrifugo JWT vs Salesforce OAuth token), but the document doesn't clarify.
 
@@ -246,11 +250,15 @@ Backend has good unit tests (table-driven, mocks). No integration tests against 
 
 ### A8: Centrifugo Scaling Not Documented
 
+> **SUPERSEDED (ADR-21):** Centrifugo eliminated. Real-time handled by Platform Events (empApi). This concern no longer applies.
+
 Single Centrifugo instance. No HA, no clustering, no Redis backend for multi-node. What happens at 1000 concurrent WebSocket connections?
 
 ### A9: Media Cleanup / Orphan Detection Missing
 
-`media_files` table tracks R2 objects. No TTL policy, no orphan detection, no cleanup job. R2 storage will grow unbounded.
+> **Note (ADR-20):** R2 eliminated. Media now stored in Salesforce ContentVersion. Orphan risk shifts to ContentVersion records.
+
+~~`media_files` table tracks R2 objects. No TTL policy, no orphan detection, no cleanup job. R2 storage will grow unbounded.~~ ContentVersion orphan detection and cleanup needed for Salesforce file storage management.
 
 ### A10: Missing ADR for Session Durability
 
@@ -294,7 +302,7 @@ UNLOGGED tables are a critical performance-vs-durability trade-off. This deserve
 
 ### Before Production
 
-9. **Create deployment guide** — Hetzner, TLS, Centrifugo, R2, Workers.
+9. **Create deployment guide** — Hetzner, TLS, Go middleware. (Simplified by ADR-20/ADR-21: no R2, Workers, or Centrifugo.)
 10. **Implement monitoring** — Prometheus metrics, log aggregation, alerting.
 11. **Cost model** — Price every component, determine minimum viable customer tier.
 12. **Residential proxy strategy** — Select provider, test, budget.

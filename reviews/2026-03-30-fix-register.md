@@ -1,3 +1,5 @@
+> **Note:** This fix register reflects architecture as of 2026-03-30. References to Centrifugo reflect pre-ADR-21 (Platform Events, 2026-04-01) architecture.
+
 # MessageForge Fix Register — 2026-03-30
 
 **Source:** Parallel recheck review (6 agents) — [2026-03-30-recheck-review.md](./2026-03-30-recheck-review.md)
@@ -28,11 +30,13 @@ These issues prevent any end-to-end message flow from working. Fix before any in
 | Field | Value |
 |---|---|
 | **Severity** | CRITICAL |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend + Salesforce |
 | **Discovered** | 2026-03-30 (Architecture agent) |
 
 **Problem:** Salesforce `MessengerOutboundService` serializes outbound messages using Apex default JSON (camelCase). The Go `outboundAPIRequest` struct expects snake_case JSON tags. Every outbound message from Salesforce will fail deserialization — all fields arrive as zero values.
+
+**Resolution:** Go struct JSON tags changed to camelCase matching Apex output. Handler, store, and tests updated.
 
 **Go struct (expects snake_case):**
 
@@ -99,11 +103,13 @@ public class OutboundMessage {
 | Field | Value |
 |---|---|
 | **Severity** | CRITICAL |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Salesforce |
 | **Discovered** | 2026-03-30 (Salesforce safety agent) |
 
-**Problem:** `SessionStatusTriggerHandler` references `Channel_SF_ID__c` on the `Session_Status__e` Platform Event, but the actual field is named `Connection_SF_ID__c`. All session status events are silently dropped because the field value is always null.
+**Problem:** `SessionStatusTriggerHandler` references `Channel_SF_ID__c` on the `Session_Status__e` Platform Event, but the actual field is named `Connection_SF_ID__c`.
+
+**Resolution:** Replaced all `Channel_SF_ID__c` with `Connection_SF_ID__c` in handler, test, and documentation files. All session status events are silently dropped because the field value is always null.
 
 **Current code (wrong field name):**
 
@@ -137,11 +143,13 @@ File: MessageForge.Salesforce/force-app/main/default/objects/Session_Status__e/f
 | Field | Value |
 |---|---|
 | **Severity** | CRITICAL |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Architecture agent) |
 
-**Problem:** The `OutboundWorker` is never instantiated with a concrete messenger adapter. The field is always `nil`. Messages enqueued via `POST /api/outbound` sit in the `outbound_queue` table with status `pending` indefinitely — no error, no warning logged at startup.
+**Problem:** The `OutboundWorker` is never instantiated with a concrete messenger adapter.
+
+**Resolution:** Created `BotAPIAdapter` in `telegram/botapi/adapter.go`, wired through `ThrottledSender` into `OutboundWorker` in `NewApp()`. Graceful degradation when `TELEGRAM_BOT_TOKEN` is not set. The field is always `nil`. Messages enqueued via `POST /api/outbound` sit in the `outbound_queue` table with status `pending` indefinitely — no error, no warning logged at startup.
 
 **Where it's left nil:**
 
@@ -194,9 +202,11 @@ These issues don't block basic testing but must be resolved before any customer-
 | Field | Value |
 |---|---|
 | **Severity** | HIGH |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Architecture agent) |
+
+**Resolution:** Implemented Option B — pipeline inserts failed messages into inbound_queue via `enqueueForRetry()`. Hot path stays in-memory; only failures touch DB. QueueWorker retries them.
 
 **Problem:** The `inbound_queue` table exists in the schema. The `QueueWorker` is instantiated, registered as an `oklog/run` actor, and polls every second. But **nothing writes to `inbound_queue`**. Zero `INSERT INTO inbound_queue` statements exist in the entire Go codebase.
 
@@ -242,9 +252,11 @@ func (p *Pipeline) Run(ctx context.Context) error {
 | Field | Value |
 |---|---|
 | **Severity** | HIGH |
-| **Status** | OPEN (infrastructure exists, not integrated) |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Security agent) |
+
+**Resolution:** Created `ConnectionStore` with encrypted CRUD. `CreateConnection` encrypts via `crypto.Encrypt()`, `GetConnection` decrypts. Migration 004 makes `encrypted_credentials NOT NULL` and relaxes plaintext column.
 
 **Problem:** Migration 003 adds `encrypted_credentials BYTEA` column. `crypto.go` implements AES-256-GCM `Encrypt()`/`Decrypt()`. But no application code reads from or writes to `encrypted_credentials`. Bot tokens remain in plaintext JSONB in the `credentials` column.
 
@@ -288,9 +300,11 @@ Results:  0 matches
 | Field | Value |
 |---|---|
 | **Severity** | HIGH |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Go reviewer agent) |
+
+**Resolution:** Added `validate:"required"` tag. Added `EncryptionKeyBytes()` helper for hex decoding.
 
 **Problem:** The `EncryptionKey` field in config has no `validate:"required"` tag. The server can start without an encryption key. When FIX-005 wires encryption into the credential lifecycle, a missing key will cause silent failures or panics.
 
@@ -325,9 +339,11 @@ EncryptionKey string `env:"ENCRYPTION_KEY" validate:"required"`
 | Field | Value |
 |---|---|
 | **Severity** | MEDIUM |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Build agent) |
+
+**Resolution:** Deleted `archived/` directory entirely (preserved in git history).
 
 **Problem:** The `archived/` directory sits inside the Go module root. It contains `.go` files with broken imports (`github.com/shaba/messenger-sf/internal/config`, `github.com/shaba/messenger-sf/internal/adapter`) that no longer exist. Running `go vet ./...` fails because the glob includes archived packages.
 
@@ -362,9 +378,11 @@ These are code quality and robustness issues. Address before any production depl
 | Field | Value |
 |---|---|
 | **Severity** | MEDIUM |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Go reviewer agent) |
+
+**Resolution:** Created `TelegramError` typed error in `telegram/errors.go` with single `TerminalCodes` source of truth. `isTerminalSendError()` now uses `errors.As` instead of `strings.Contains`. Duplicate list removed from `delivery_status.go`.
 
 **Problem:** Terminal error classification uses `strings.Contains(err.Error(), ...)` against a hardcoded slice. This is fragile — a wrapped error containing a sentinel string by coincidence will be misclassified. Additionally, the terminal error list is duplicated in two locations with different entries.
 
@@ -414,9 +432,11 @@ var terminalErrors = map[string]bool{
 | Field | Value |
 |---|---|
 | **Severity** | MEDIUM |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Go reviewer agent) |
+
+**Resolution:** Replaced `GlobalMetrics` singleton with local interfaces (`inboundMetrics`, `outboundMetrics`) injected via constructors. `messenger` package no longer imports `server`. Metrics wired through `app.go` via `srv.Metrics()`.
 
 **Problem:** `server.GlobalMetrics` is a mutable package-level singleton. Workers in the `messenger` package import the `server` package to access it — a layering violation (`messenger` -> `server`). Tests cannot isolate metrics.
 
@@ -447,9 +467,13 @@ File: MessageForge.Backend/internal/messenger/queue_worker.go:11 — imports "se
 | Field | Value |
 |---|---|
 | **Severity** | MEDIUM |
-| **Status** | OPEN (handler not yet registered) |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
 | **Discovered** | 2026-03-30 (Go reviewer agent) |
+
+**Resolution:** Added `allowedContentTypes` map (9 MIME types) with validation before `PresignedPutURL`. Disallowed types return HTTP 400. Tests cover allowed, disallowed, and empty content types.
+
+> **Note (ADR-20):** R2 has been eliminated. This fix applied to the R2 presign path which is now replaced by ContentVersion upload. The content-type allowlist pattern should be carried forward to the ContentVersion upload adapter.
 
 **Problem:** `req.ContentType` is passed directly to R2's presign API without validation. An attacker with a valid HMAC token could set `Content-Type: text/html`, enabling stored XSS via the CDN.
 
@@ -489,9 +513,11 @@ var allowedContentTypes = map[string]bool{
 | Field | Value |
 |---|---|
 | **Severity** | MEDIUM |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Salesforce |
 | **Discovered** | 2026-03-30 (Salesforce safety agent) |
+
+**Resolution:** Option A implemented — added `Chat_External_ID__c` field to `Inbound_Message__e`. Handler now checks dedicated fields: `Chat_SF_ID__c` for SF IDs only, `Chat_External_ID__c` for platform IDs. Go ingester updated to send `Chat_External_ID__c`. Tests include 18-char external ID regression test.
 
 **Problem:** The `Chat_SF_ID__c` field on `Inbound_Message__e` is labeled "Chat SF ID" with length 18 (Salesforce ID size), but `InboundMessageTriggerHandler` uses it for both Salesforce IDs and external IDs. If an external ID happens to be 18 alphanumeric characters, it could parse as a valid (but wrong) Salesforce ID.
 
@@ -520,9 +546,11 @@ try {
 | Field | Value |
 |---|---|
 | **Severity** | MEDIUM |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Salesforce |
 | **Discovered** | 2026-03-30 (Salesforce safety agent) |
+
+**Resolution:** All 7 `console.error()` statements removed. Error handling preserved via tracked properties (`subscriptionError`, `connectionError`) that drive UI feedback. Added missing error state for catch blocks that previously only had console.error.
 
 **Problem:** 7 `console.error()` calls remain in production LWC code. These expose debugging information (error objects, stack traces) to anyone with browser DevTools open.
 
@@ -539,6 +567,7 @@ File: MessageForge.Salesforce/force-app/main/default/lwc/messengerChat/messenger
 File: MessageForge.Salesforce/force-app/main/default/lwc/messengerLiveChat/messengerLiveChat.js
   Line 28:  console.error('Failed to load Centrifugo URL:', err);
   Line 56:  console.error('Centrifugo:', context, err);
+  > **Note (ADR-21):** Centrifugo eliminated. messengerLiveChat will be rewritten to use empApi. These console.error calls will be removed as part of that rewrite.
 ```
 
 **Fix:** Remove or replace with a production-safe logging utility. AppExchange security review may flag these.
@@ -554,8 +583,10 @@ File: MessageForge.Salesforce/force-app/main/default/lwc/messengerLiveChat/messe
 | Field | Value |
 |---|---|
 | **Severity** | LOW |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Go Backend |
+
+**Resolution:** Both `queue_worker.go` and `outbound_worker.go` deferred rollbacks now use `context.WithTimeout(context.Background(), 5*time.Second)` instead of the parent context.
 
 **Problem:** On SIGINT, the deferred `Rollback(ctx)` runs with an already-cancelled context. pgx returns `context.Canceled` and the error is discarded. PostgreSQL rolls back server-side when the connection closes, so no data corruption occurs — but the code is misleading.
 
@@ -583,8 +614,10 @@ File: MessageForge.Backend/internal/messenger/outbound_worker.go:65
 | Field | Value |
 |---|---|
 | **Severity** | LOW |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Salesforce |
+
+**Resolution:** All 3 handlers updated with detailed DML logging: `getDmlFieldNames()`, `getDmlStatusCode()`, and `getDmlMessage()` per error index.
 
 **Problem:** Trigger handlers catch `DmlException` but log only the generic message. No field names, index, or status codes. Makes production troubleshooting difficult.
 
@@ -605,8 +638,10 @@ File: MessageForge.Salesforce/force-app/main/default/classes/SessionStatusTrigge
 | Field | Value |
 |---|---|
 | **Severity** | LOW |
-| **Status** | OPEN |
+| **Status** | FIXED (2026-03-30) |
 | **Component** | Salesforce |
+
+**Resolution:** 7 bulk test methods added across all 3 handlers (200+ Platform Events each). Tests verify field-level correctness, mixed status scenarios, and last-event-wins behavior.
 
 **Problem:** No explicit bulk operation tests (200+ records) visible in the test classes. Salesforce governor limits require bulk-safe code, which should be verified by tests.
 
@@ -616,22 +651,22 @@ File: MessageForge.Salesforce/force-app/main/default/classes/SessionStatusTrigge
 
 ## Test Coverage Gaps (Reference)
 
-Current Go test coverage is 50.1% against 80% target.
+**Go test coverage improved from 50.1% to 68.4%** (target: 80%). Updated 2026-03-30.
 
-| Package | Coverage | Critical Gaps |
-|---|---|---|
-| `internal/messenger` | 16.8% | `app.go` (NewApp, Run), `queue_worker.go`, `outbound_worker.go` — all 0% |
-| `internal/database` | 38.4% | `migrations.go`, `session_backup.go`, `PgSessionStore` — all 0% |
-| `internal/server` | 49.0% | `server.go` (RegisterWebhook, AdminRun), `metrics.go` — all 0% |
-| `internal/media` | 62.9% | `r2.go` (Upload, Download, Delete, Presign) — all 0% |
-| `internal/telegram/botapi` | 76.8% | Near target |
-| `internal/telegram/mtproto` | 77.4% | Near target |
-| `internal/salesforce` | 79.9% | Marginal — just under 80% |
-| `internal/realtime` | 86.4% | OK |
-| `internal/telegram` | 87.7% | OK |
-| `internal/messenger/config` | 100% | OK |
+| Package | Before | After | Notes |
+|---|---|---|---|
+| `internal/messenger` | 16.8% | 62.1% | +45.3pp — app.go, queue_worker, outbound_worker tested |
+| `internal/server` | 49.0% | 86.4% | +37.4pp — handlers, metrics, webhook registration tested |
+| `internal/media` | 62.9% | 70.4% | +7.5pp — R2 client mock tests added |
+| `internal/database` | 38.4% | 49.0% | +10.6pp — needs integration tests (real PG) for further gains |
+| `internal/telegram` | 87.7% | 88.6% | OK |
+| `internal/realtime` | 86.4% | 86.4% | OK |
+| `internal/salesforce` | 79.9% | 79.9% | OK |
+| `internal/telegram/botapi` | 76.8% | 78.8% | OK |
+| `internal/telegram/mtproto` | 77.4% | 77.4% | OK |
+| `internal/messenger/config` | 100% | 100% | OK |
 
-**Priority:** `internal/messenger` and `internal/database` are the most critical gaps — they contain the core application wiring and data persistence.
+**Remaining gap:** `internal/database` (49%) — `Migrate()`, `Restore()`, `snapshot()` are tightly coupled to `*pgxpool.Pool`. Requires integration tests with real PostgreSQL or interface refactoring.
 
 ---
 

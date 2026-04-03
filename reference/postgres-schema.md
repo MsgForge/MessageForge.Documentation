@@ -91,22 +91,9 @@ CREATE TABLE outbound_queue (
 );
 ```
 
-### Media File Tracking
+### Media Storage
 
-```sql
-CREATE TABLE media_files (
-    id              BIGSERIAL PRIMARY KEY,
-    connection_id   BIGINT REFERENCES connections(id),
-    platform        TEXT NOT NULL,
-    external_file_id TEXT NOT NULL,          -- Telegram file_id, WhatsApp media ID, etc.
-    r2_object_key   TEXT,                    -- Cloudflare R2 key after upload
-    mime_type       TEXT,
-    file_size       BIGINT,
-    sf_record_id    TEXT,                    -- SF Messenger_Message__c ID
-    uploaded_at     TIMESTAMPTZ,
-    deleted_at      TIMESTAMPTZ              -- Soft delete tracking
-);
-```
+> **Note (ADR-20):** Media metadata is stored in Salesforce ContentVersion, not PostgreSQL. The `media_files` table has been eliminated. Platform file IDs (e.g., Telegram `file_id`) are tracked in ContentVersion custom fields. Files are linked to Message/Attachment records via ContentDocumentLink.
 
 ## Indexes
 

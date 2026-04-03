@@ -33,7 +33,7 @@ Each event x each subscriber = one delivery.
 
 Example: 1 event published, 3 LWC components subscribed = 3 deliveries consumed.
 
-With 50K/24h limit and active chat, this exhausts fast. That's why Centrifugo handles live UI updates.
+With 50K/24h limit and active chat, this can exhaust at scale. At MVP scale (500-2K messages/day, 3-10 agents), PE daily deliveries stay within limits. LWC subscribes via `lightning/empApi` for real-time updates (ADR-21). For scale beyond PE limits, evaluate High-Volume PE add-on or Pub/Sub API (ADR-19).
 
 ## Why This Matters for Go Middleware
 

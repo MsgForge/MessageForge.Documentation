@@ -1,3 +1,5 @@
+> **Note:** This risk register predates ADR-20 (ContentVersion, 2026-03-30) and ADR-21 (Platform Events, 2026-04-01). Risks referencing R2, Centrifugo, and Cloudflare Workers have been resolved by eliminating those components. Individual risks are marked DEPRECATED/SUPERSEDED inline where applicable.
+
 # MessageForge Risk Register — 2026-03-29
 
 **Last updated:** 2026-03-30
@@ -50,6 +52,8 @@
 **Description:** `Middleware_Config__mdt` was a regular (non-Protected) Custom Metadata Type.
 
 **Resolution (verified 2026-03-30):** Both `Encryption_Key__mdt` and `Messenger_Settings__mdt` now have `<visibility>Protected</visibility>` in XML metadata. `HMACValidator.cls` and `CentrifugoTokenController.cls` read from `Encryption_Key__mdt` (Protected). `MessengerOutboundService.cls` reads HMAC from `Encryption_Key__mdt` and URL from `Messenger_Settings__mdt`. All Protected.
+
+> **Note (ADR-21):** `CentrifugoTokenController.cls` and its associated Centrifugo HMAC secret are no longer needed. Centrifugo eliminated in favor of Platform Events (empApi).
 
 ---
 
@@ -158,8 +162,9 @@
 
 **Impact:** At ~16K messages/day with 3+ subscribers, delivery stops. Triggers stop firing. Messages accumulate in Go queue without SF acknowledgment.
 
+> **Note (ADR-21):** Centrifugo was eliminated. Real-time UI now uses Platform Events via empApi, which shares the same 50K delivery limit. This makes PE budget management more critical than before.
+
 **Mitigation:**
-- Centrifugo handles live UI (already designed)
 - Minimize PE trigger subscribers (1 per PE type)
 - Batch PE publishing (already implemented: 950KB threshold)
 - Monitor `SELECT COUNT(*) FROM EventBusSubscriber WHERE EventType = 'tgint__Inbound_Message__e'`
@@ -316,8 +321,7 @@
 | Hetzner VPS (ARM, 4GB) | $5-15 | Go middleware |
 | Hetzner Managed PostgreSQL | $15-30 | Or self-hosted |
 | Residential proxies (50 IPs) | $250-1000 | Biggest variable cost |
-| Cloudflare R2 (10GB) | $0-5 | 10GB free tier |
-| Cloudflare Workers | $0-5 | 100K free requests/day |
+| Salesforce ContentVersion | $0 | Included in subscriber's org file storage (ADR-20) |
 | Domain + SSL | $10-20/year | Let's Encrypt for free SSL |
 | **Total (MVP)** | **$280-1070/month** | Proxies dominate |
 
@@ -332,11 +336,13 @@
 | Status | OPEN |
 | Owner | Go Backend |
 
-**Description:** R2 objects tracked in `media_files` table. No TTL, no cleanup job, no orphan detection.
+> **Note (ADR-20):** R2 eliminated. Media now stored in Salesforce ContentVersion. Orphan risk shifts to ContentVersion/ContentDocument records without valid parent links. Cleanup strategy must use Salesforce queries instead of PostgreSQL `media_files` table.
 
-**Impact:** Unbounded R2 storage growth. After 10GB free tier, costs accumulate.
+**Description:** ~~R2 objects tracked in `media_files` table. No TTL, no cleanup job, no orphan detection.~~ ContentVersion records linked to deleted messages or attachments may persist as orphans.
 
-**Mitigation:** Implement weekly cleanup job: scan `media_files` where `deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '30 days'`, delete from R2, remove row.
+**Impact:** Unbounded Salesforce file storage growth, consuming subscriber's org allocation ($5/GB/month for excess).
+
+**Mitigation:** Implement periodic cleanup: query ContentDocumentLink for orphaned links, delete ContentDocument records where all parent links are to deleted records.
 
 ---
 
@@ -346,8 +352,10 @@
 |---|---|
 | Severity | MEDIUM |
 | Likelihood | POSSIBLE |
-| Status | OPEN |
+| Status | **DEPRECATED (ADR-21)** |
 | Owner | Infrastructure |
+
+> **DEPRECATED (ADR-21):** Centrifugo eliminated. Real-time handled by Platform Events (empApi). This risk is no longer applicable.
 
 **Description:** Single Centrifugo node. No HA, no Redis backend for multi-node.
 
@@ -368,7 +376,9 @@
 
 **Description:** ADR-13 says "15 min" for Centrifugo JWT. Security checklist says "90-min TTL." Likely different systems (Centrifugo vs OAuth) but document doesn't clarify.
 
-**Mitigation:** Add explicit table: "Centrifugo JWT: 15 min TTL. Salesforce OAuth token: 90 min TTL. Presigned URLs: 15-60 min TTL."
+> **Note (ADR-21):** Centrifugo eliminated. Centrifugo JWT TTL is no longer relevant. Only Salesforce OAuth token TTL (90 min) remains.
+
+**Mitigation:** ~~Add explicit table: "Centrifugo JWT: 15 min TTL. Salesforce OAuth token: 90 min TTL. Presigned URLs: 15-60 min TTL."~~ Simplified: only Salesforce OAuth token TTL (90 min) needs to be documented.
 
 ---
 
@@ -753,7 +763,7 @@ Same pattern in `outbound_worker.go:176-204`.
 | R13 | No monitoring | MEDIUM | CERTAIN | RESOLVED (2026-03-29) |
 | R14 | No cost model | MEDIUM | CERTAIN | RESOLVED (2026-03-29) |
 | R15 | Media orphans | MEDIUM | LIKELY | OPEN |
-| R16 | Centrifugo single node | MEDIUM | POSSIBLE | OPEN |
+| R16 | Centrifugo single node | MEDIUM | POSSIBLE | DEPRECATED (ADR-21) |
 | R17 | JWT TTL unclear | MEDIUM | POSSIBLE | RESOLVED (2026-03-29) |
 | R18 | Settings proliferation | LOW | CERTAIN | OPEN |
 | R19 | Duplicated skills | LOW | CERTAIN | OPEN |
@@ -767,7 +777,7 @@ Same pattern in `outbound_worker.go:176-204`.
 | R27 | Outbound endpoint not registered | HIGH | CERTAIN | RESOLVED (2026-03-30) — POST /api/outbound with HMAC |
 | R28 | `WEBHOOK_SECRET` not required | HIGH | POSSIBLE | RESOLVED (2026-03-30) — validate:"required" tag |
 | R29 | `/metrics` unauthenticated | HIGH | POSSIBLE | RESOLVED (2026-03-30) — separate admin port 127.0.0.1:9090 |
-| R30 | Plaintext credentials not migrated | HIGH | LIKELY | OPEN (new 2026-03-30) |
+| R30 | Plaintext credentials not migrated | HIGH | LIKELY | RESOLVED (2026-03-30) — ConnectionStore with AES-256-GCM encrypt/decrypt, migration 004 |
 | R31 | Queue worker silent UPDATE failure | HIGH | POSSIBLE | RESOLVED (2026-03-30) — mark functions return error, abort tx |
 | R32 | `sf_connection_id` column name wrong | MEDIUM | CERTAIN | RESOLVED (2026-03-30) — renamed to sf_channel_id |
 | R33 | No migration version tracking | MEDIUM | LIKELY | RESOLVED (2026-03-30) — schema_migrations table + version check |

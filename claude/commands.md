@@ -20,7 +20,7 @@ gofmt -w .                  # Format
 golangci-lint run ./...     # Lint
 
 # Infrastructure
-docker compose up -d        # Start PostgreSQL + Centrifugo
+docker compose up -d        # Start PostgreSQL
 docker compose down         # Stop services
 bash scripts/setup.sh       # First-time setup
 ```
@@ -68,16 +68,4 @@ cd web && npx playwright test           # E2E tests
 
 # Clean
 make clean
-```
-
-## MessageForge.Centrifugo
-
-```bash
-# Via Backend's docker-compose
-docker compose -f MessageForge.Backend/docker-compose.yml up centrifugo -d
-
-# Admin API
-curl -X POST http://localhost:8001/api \
-  -H "X-API-Key: local-dev-api-key" \
-  -d '{"method":"publish","params":{"channel":"test","data":{}}}'
 ```

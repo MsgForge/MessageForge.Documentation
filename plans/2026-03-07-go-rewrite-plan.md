@@ -1,5 +1,7 @@
 # Go Backend Rewrite — Implementation Plan
 
+> **Note:** This plan predates ADR-20 (R2→ContentVersion) and ADR-21 (Centrifugo→Platform Events). R2 and Centrifugo references below are historical.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Rewrite all Go backend code using squad-pattern architecture (oklog/run lifecycle, App pattern, struct-tag config, local interfaces).
