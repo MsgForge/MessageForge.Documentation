@@ -82,6 +82,7 @@ Messenger_Message__c               -- Individual message
 ├── Attachment_Count__c            -- Roll-Up from Messenger_Attachment__c
 ├── Delivery_Status__c             -- pending → sent → delivered → read → failed
 ├── Delivery_Error__c
+├── Last_Error__c                  -- Terminal error details (failed outbound messages)
 ├── Sent_At__c
 ├── Reply_To_External_ID__c        -- Thread parent (text, intentionally not Lookup)
 └── Is_Edited__c
@@ -123,6 +124,14 @@ Channel_Audit_Log__c               -- Security audit trail
 ├── Performed_By__c                -- Lookup → User
 ├── Event_Timestamp__c
 └── Source__c                      -- salesforce | go_middleware
+
+Messenger_Event__c                 -- Parsed events from messages (e.g., Cyprus events aggregator)
+├── Message__c                     -- Lookup → Message (source message)
+├── Event_Title__c
+├── Event_Date__c
+├── Event_Location__c
+├── Event_Description__c
+└── Processing_Status__c           -- pending | confirmed | discarded
 ```
 
 ## Protected Custom Metadata (package-internal, invisible to customer)
@@ -136,6 +145,18 @@ tgint__Apple_MSP__mdt              -- Our Apple Messages MSP credentials
 ├── MSP_ID__c                      -- UUID
 ├── MSP_Secret__c                  -- Base64 secret
 └── Endpoint_URL__c                -- Apple API endpoint
+
+Messenger_Settings__mdt            -- Package configuration settings (protected)
+├── HMAC_Secret__c                 -- Shared secret for Go → Salesforce webhook auth
+├── Go_Middleware_URL__c           -- Go server base URL for outbound calls
+├── Rate_Limit_Bucket_Size__c      -- Default rate limit bucket size
+└── Is_Active__c                   -- Enable/disable global settings
+
+Middleware_Config__mdt             -- Go middleware configuration (protected)
+├── Instance_Region__c             -- Deployment region (e.g., eu-central-1)
+├── Max_Concurrent_Workers__c      -- Worker pool size limit
+├── Batching_Interval_Seconds__c   -- Platform Event batch flush interval
+└── Max_Batch_Size_KB__c           -- Maximum batch size in KB
 ```
 
 ## Platform Events
@@ -144,15 +165,17 @@ tgint__Apple_MSP__mdt              -- Our Apple Messages MSP credentials
 tgint__Inbound_Message__e          -- Go → SF: new inbound messages
 ├── Text__c
 ├── Chat_SF_ID__c
+├── Chat_External_ID__c
 ├── Sender_Name__c
 ├── Sender_External_ID__c
 ├── Message_Type__c
 ├── Media_URL__c
 ├── Media_MIME_Type__c
+├── Protocol__c
 └── Sent_At__c
 
 tgint__Session_Status__e           -- Go → SF: channel session lifecycle
-├── Channel_SF_ID__c
+├── Connection_SF_ID__c
 ├── Status__c                      -- online | offline | connecting | auth_required | mfa_required | flood_wait | error
 └── Error_Detail__c
 

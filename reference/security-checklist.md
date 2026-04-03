@@ -43,9 +43,15 @@
 - [x] MTProto session keys in PostgreSQL UNLOGGED tables, never transmitted to Salesforce
 - [ ] Salesforce secrets in Protected Custom Metadata Types (not Custom Settings)
 
+## Object Security (FLS/CRUD)
+
+- [ ] Field-Level Security (FLS) enforced on all custom objects
+- [ ] CRUD permissions restricted via Permission Sets
+- [ ] Sharing rules configured for Messenger_Channel__c and Messenger_Chat__c
+- [ ] Apex Managed Sharing implemented for Channel_User_Access__c
+
 ## Memory Safety
 
-- [x] sync.Pool buffers zeroed after use (`ingestion.go`) — prevents credential leakage
 - [x] No sensitive data in error messages returned to clients
 
 ## Media Security (ADR-20: ContentVersion)
@@ -92,7 +98,8 @@
 | Date | Finding | Status |
 |------|---------|--------|
 | 2026-03-07 | HMAC middleware missing body size limit | FIXED |
-| 2026-03-07 | sync.Pool buffers not zeroed | FIXED |
 | 2026-03-07 | ~~CF Worker CORS open to all origins~~ | ~~FIXED~~ — HISTORICAL (ADR-20: Cloudflare Workers removed) |
 | 2026-03-07 | ~~CF Worker timingSafeEqual length leak~~ | ~~FIXED~~ — HISTORICAL (ADR-20: Cloudflare Workers removed) |
 | 2026-03-07 | Go server no TLS | DOCUMENTED (reverse proxy required) |
+| 2026-04-03 | ~~sync.Pool buffers not zeroed~~ | ~~REMOVED~~ — sync.Pool not used in current implementation |
+| 2026-04-03 | Media storage migrated to ContentVersion | DONE (ADR-20) |

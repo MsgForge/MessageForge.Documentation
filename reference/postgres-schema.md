@@ -9,7 +9,7 @@ PostgreSQL runs as a **dedicated, hosted service** next to the Go middleware (sa
 ```sql
 CREATE UNLOGGED TABLE mtproto_sessions (
     id              BIGSERIAL PRIMARY KEY,
-    connection_id   BIGINT REFERENCES connections(id),
+    connection_id   BIGINT UNIQUE REFERENCES connections(id) ON DELETE CASCADE,
     session_data    BYTEA NOT NULL,        -- Raw gotd session bytes
     dc_id           INT NOT NULL,
     updated_at      TIMESTAMPTZ DEFAULT NOW()
@@ -43,7 +43,7 @@ CREATE TABLE connections (
     sf_org_id       TEXT NOT NULL,          -- Salesforce Org ID
     sf_user_id      TEXT NOT NULL,          -- Salesforce User ID
     sf_channel_id   TEXT,                  -- SF record ID (Messenger_Channel__c)
-    credentials     JSONB NOT NULL,         -- Encrypted: phone, api_id, bot_token, etc.
+    encrypted_credentials BYTEA NOT NULL,   -- Encrypted: phone, api_id, bot_token, etc.
     proxy_url       TEXT,
     status          TEXT DEFAULT 'active',
     created_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -93,7 +93,7 @@ CREATE TABLE outbound_queue (
 
 ### Media Storage
 
-> **Note (ADR-20):** Media metadata is stored in Salesforce ContentVersion, not PostgreSQL. The `media_files` table has been eliminated. Platform file IDs (e.g., Telegram `file_id`) are tracked in ContentVersion custom fields. Files are linked to Message/Attachment records via ContentDocumentLink.
+> **Note (ADR-20):** Media metadata and files are stored in Salesforce ContentVersion, not PostgreSQL. The `media_files` table has been **eliminated** in migration 005. Platform file IDs (e.g., Telegram `file_id`) are tracked in ContentVersion custom fields. Files are linked to Message/Attachment records via ContentDocumentLink. The `credentials` column was also dropped from the `connections` table in migration 005, replaced by `encrypted_credentials` (BYTEA).
 
 ## Indexes
 

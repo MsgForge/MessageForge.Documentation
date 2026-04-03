@@ -152,3 +152,67 @@ Clean, dedicated IPs required for MTProto. Budget VPS with spam-tainted subnets 
 Go cross-compilation: `GOOS=linux GOARCH=arm64` (production) + `GOOS=linux GOARCH=amd64` (fallback).
 
 GitHub Actions: native ARM runners or Docker Buildx (avoid QEMU). Produce single multi-arch OCI container manifest.
+
+## Dual Ingestion Paths
+
+There are two ingestion paths for Go → Salesforce data flow:
+
+### Primary Path: Platform Events (via Salesforce REST API)
+
+The Go middleware publishes Platform Events directly via the Salesforce REST API:
+
+```
+Go Middleware
+    │
+    ├── HTTP POST /services/data/vXX.X/sobjects/tgint__Inbound_Message__e
+    ├── HTTP POST /services/data/vXX.X/sobjects/tgint__Session_Status__e
+    └── HTTP POST /services/data/vXX.X/sobjects/tgint__Message_Delivery_Status__e
+```
+
+**When to use:**
+- Real-time message delivery
+- Session status updates
+- Delivery status notifications
+- Standard operational flow
+
+**Advantages:**
+- Native Salesforce event bus
+- Real-time LWC updates via empApi
+- Decoupled from database locking
+- Native Salesforce security model
+
+### Secondary Path: MessengerInboundAPI.cls REST Endpoint
+
+Salesforce exposes a `MessengerInboundAPI.cls` REST endpoint (`@RestResource`) for batch HTTP ingestion:
+
+```
+Go Middleware
+    │
+    └── HTTP POST /services/apexrest/api/messenger/inbound
+```
+
+**When to use:**
+- Bulk batch ingestion (historical sync)
+- Migrations
+- Bulk data import from other systems
+- High-volume non-real-time scenarios
+
+**Advantages:**
+- Bypass Platform Event limits
+- Direct record creation
+- Better for bulk operations
+
+**Usage Decision Matrix:**
+
+| Scenario | Recommended Path | Reason |
+|---|---|---|
+| Real-time chat messages | Platform Events | LWC needs instant updates |
+| Session state changes | Platform Events | Real-time status tracking |
+| Delivery status | Platform Events | Instant UI feedback |
+| Historical chat archive sync | REST API | Bypass PE limits, bulk DML |
+| Bulk data migration | REST API | Direct record creation |
+| Backfill missing messages | REST API | Batch operation |
+
+Both paths are authenticated:
+- **Platform Events:** OAuth 2.0 JWT Bearer (Go → Salesforce)
+- **REST API:** HMAC-SHA256 signature validation (`X-Signature` header)

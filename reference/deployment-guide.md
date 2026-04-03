@@ -4,6 +4,8 @@
 
 This guide covers deploying MessageForge Backend to production on a Hetzner VPS with PostgreSQL and Caddy reverse proxy with automatic TLS.
 
+**Architecture:** Go middleware server (port 8080) + admin/metrics server (port 9090) + PostgreSQL 17 + Caddy (TLS termination).
+
 ## Table of Contents
 
 1. [Infrastructure Setup](#infrastructure-setup)
@@ -43,6 +45,7 @@ Configure Hetzner Cloud Firewall:
 | TCP | 80 | 0.0.0.0/0 | HTTP (Caddy auto-redirect) |
 | TCP | 443 | 0.0.0.0/0 | HTTPS (Caddy TLS) |
 | TCP | 8080 | localhost only | Go backend (internal) |
+| TCP | 9090 | localhost only | Admin/metrics server (internal) |
 
 ## Server Provisioning
 
@@ -418,6 +421,8 @@ Create `/home/messageforge/.env` with all required variables:
 # Server
 HTTP_HOST=0.0.0.0
 HTTP_PORT=8080
+ADMIN_HOST=127.0.0.1
+ADMIN_PORT=9090
 
 # PostgreSQL
 DATABASE_URL=postgresql://messenger:your-password@localhost:5432/messenger
@@ -431,6 +436,7 @@ SF_PRIVATE_KEY=your-private-key
 # Telegram
 TELEGRAM_API_ID=your-api-id
 TELEGRAM_API_HASH=your-api-hash
+TELEGRAM_BOT_TOKEN=your-bot-token
 
 # Webhook Authentication
 WEBHOOK_SECRET=your-hmac-secret-for-salesforce-webhooks
@@ -453,6 +459,8 @@ Create `/home/messageforge/messageforge/MessageForge.Backend/.env.example`:
 # Server Configuration
 HTTP_HOST=0.0.0.0
 HTTP_PORT=8080
+ADMIN_HOST=127.0.0.1
+ADMIN_PORT=9090
 
 # PostgreSQL Connection
 # Format: postgresql://user:password@host:port/database
@@ -467,6 +475,9 @@ SF_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY---
 # Telegram Configuration (obtain from https://my.telegram.org)
 TELEGRAM_API_ID=your-api-id
 TELEGRAM_API_HASH=your-api-hash
+
+# Telegram Bot Token (obtain from @BotFather)
+TELEGRAM_BOT_TOKEN=your-bot-token-from-botfather
 
 # Webhook Authentication (for Salesforce platform event triggers)
 WEBHOOK_SECRET=your-hmac-secret-for-webhooks
@@ -491,7 +502,7 @@ Follow this checklist to bring up a complete production environment from scratch
 ### Server Setup
 
 - [ ] VPS created (CAX11 or larger)
-- [ ] Firewall rules configured (22, 80, 443, 8080)
+- [ ] Firewall rules configured (22, 80, 443, 8080, 9090)
 - [ ] System packages updated (`apt update && apt upgrade`)
 - [ ] Non-root user created (`messageforge`)
 - [ ] SSH keys installed for passwordless access
