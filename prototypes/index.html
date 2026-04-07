@@ -1,0 +1,1687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MessageForge — LWC Prototype</title>
+
+<!-- SLDS via CDN (used by the conversations screen) -->
+<link rel="stylesheet"
+      href="https://unpkg.com/@salesforce-ux/design-system/assets/styles/salesforce-lightning-design-system.min.css" />
+
+<style>
+  /* ============================================================
+     TOKENS — mirror SLDS color names so the channel screens
+     (which don't go through SLDS classes) stay consistent with
+     the conversations screen (which does).
+     ============================================================ */
+  :root{
+    --slds-blue:#0176d3;
+    --slds-blue-dark:#014486;
+    --slds-bg:#f3f3f3;
+    --slds-border:#dddbda;
+    --slds-text:#181818;
+    --slds-text-weak:#5c5c5c;
+    --slds-green:#2e844a;
+    --slds-red:#ba0517;
+    --slds-amber:#fe9339;
+    --radius:6px;
+  }
+
+  html, body { height:100%; margin:0; background:var(--slds-bg);
+    font-family:-apple-system,"Segoe UI",Roboto,"Salesforce Sans",Arial,sans-serif;
+    color:var(--slds-text); font-size:13px; }
+  *{ box-sizing:border-box; }
+
+  /* ============================================================
+     SHELL — left nav rail + workspace
+     ============================================================ */
+  .mf-shell { display:flex; height:100vh; overflow:hidden; }
+
+  .mf-rail {
+    width:56px; flex:0 0 56px; background:#032d60;
+    display:flex; flex-direction:column; align-items:center;
+    padding-top:8px; gap:4px;
+  }
+  .mf-rail .mf-rail-btn {
+    width:44px; height:44px; border-radius:.25rem;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; cursor:pointer; opacity:.75;
+    transition:background .15s, opacity .15s;
+  }
+  .mf-rail .mf-rail-btn:hover { background:rgba(255,255,255,.1); opacity:1; }
+  .mf-rail .mf-rail-btn.is-active { background:rgba(255,255,255,.18); opacity:1; }
+  .mf-rail .mf-rail-btn svg { width:22px; height:22px; fill:#fff; }
+  .mf-rail-sep { flex:1; }
+
+  .mf-workspace { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .mf-tabbar {
+    background:#fff; border-bottom:1px solid var(--slds-border);
+    height:40px; display:flex; align-items:center; padding:0 .75rem;
+    flex:0 0 40px;
+  }
+  .mf-tabbar .mf-tab {
+    height:100%; display:flex; align-items:center; padding:0 1rem;
+    font-size:13px; color:#444; cursor:pointer; border-bottom:2px solid transparent;
+  }
+  .mf-tabbar .mf-tab.is-active { color:var(--slds-blue); border-bottom-color:var(--slds-blue); font-weight:600; }
+
+  .mf-screen { flex:1; overflow:auto; padding:20px; }
+  .mf-screen.mf-screen-chat { padding:0; overflow:hidden; }
+
+  /* ============================================================
+     CHANNEL LIST + WIZARD STYLES (from messageforge-lwc-demo.html)
+     ============================================================ */
+  .panel { background:#fff; border:1px solid var(--slds-border); border-radius:var(--radius);
+    box-shadow:0 2px 2px rgba(0,0,0,.05); margin-bottom:20px; overflow:hidden; max-width:1400px; }
+  .panel-h { padding:14px 18px; border-bottom:1px solid var(--slds-border);
+    display:flex; align-items:center; justify-content:space-between;
+    background:linear-gradient(to bottom,#fafaf9,#f3f3f3); }
+  .panel-h h2 { margin:0; font-size:14px; font-weight:600; }
+  .panel-h .lwc-tag { font-family:'SF Mono',Menlo,monospace; font-size:11px; color:var(--slds-text-weak);
+    background:#fff; padding:3px 8px; border-radius:3px; border:1px solid var(--slds-border); }
+  .panel-b { padding:18px; }
+
+  /* Buttons (channel screens) */
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:4px;
+    font-size:13px; cursor:pointer; border:1px solid var(--slds-border); background:#fff;
+    color:var(--slds-blue); font-weight:500; font-family:inherit; }
+  .btn:hover { background:#f4f6f9; }
+  .btn.brand { background:var(--slds-blue); color:#fff; border-color:var(--slds-blue); }
+  .btn.brand:hover { background:var(--slds-blue-dark); }
+  .btn.destructive { color:var(--slds-red); border-color:var(--slds-red); }
+  .btn.destructive:hover { background:#fef1f1; }
+  .btn.sm { padding:3px 8px; font-size:12px; }
+
+  /* SLDS-style table */
+  table.slds-tbl { width:100%; border-collapse:collapse; }
+  table.slds-tbl th { text-align:left; padding:8px 12px; background:#fafaf9; font-size:11px;
+    text-transform:uppercase; color:var(--slds-text-weak); font-weight:600;
+    border-bottom:1px solid var(--slds-border); }
+  table.slds-tbl td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:13px; vertical-align:middle; }
+  table.slds-tbl tr:hover td { background:#f7f9fb; }
+
+  .pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .pill.ok    { background:#ecf7ee; color:var(--slds-green); }
+  .pill.warn  { background:#fff5e6; color:var(--slds-amber); }
+  .pill.err   { background:#fdecea; color:var(--slds-red); }
+  .pill.draft { background:#eef1f6; color:var(--slds-text-weak); }
+
+  .row { display:flex; gap:10px; align-items:center; }
+
+  /* Wizard */
+  .wizard-steps { display:flex; gap:0; padding:12px 18px; background:#fafaf9;
+    border-bottom:1px solid var(--slds-border); }
+  .wizard-step { flex:1; display:flex; align-items:center; gap:8px; padding:8px;
+    color:var(--slds-text-weak); font-size:12px; position:relative; }
+  .wizard-step .num { width:24px; height:24px; border-radius:50%; background:#dddbda; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:600; font-size:11px; }
+  .wizard-step.active { color:var(--slds-blue); font-weight:600; }
+  .wizard-step.active .num { background:var(--slds-blue); }
+  .wizard-step.done .num { background:var(--slds-green); }
+  .wizard-step.done { color:var(--slds-green); }
+  .wizard-step:not(:last-child)::after { content:""; position:absolute; right:0; top:50%;
+    width:20px; height:1px; background:var(--slds-border); }
+  .wizard-body { padding:24px 28px; min-height:280px; }
+
+  .field { margin-bottom:14px; }
+  .field label { display:block; font-size:12px; color:var(--slds-text-weak);
+    margin-bottom:4px; font-weight:600; }
+  .field input, .field select, .field textarea {
+    width:100%; padding:7px 10px; border:1px solid var(--slds-border); border-radius:4px;
+    font-size:13px; background:#fff; font-family:inherit;
+  }
+  .field input:focus, .field select:focus { outline:none; border-color:var(--slds-blue);
+    box-shadow:0 0 3px var(--slds-blue); }
+  .field .help { font-size:11px; color:var(--slds-text-weak); margin-top:3px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+
+  .channel-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .channel-card { border:2px solid var(--slds-border); border-radius:6px; padding:14px;
+    cursor:pointer; text-align:center; background:#fff; transition:all .15s; }
+  .channel-card:hover { border-color:var(--slds-blue); background:#f4f9fd; }
+  .channel-card.selected { border-color:var(--slds-blue); background:#eef6fc; }
+  .channel-card.disabled { opacity:.45; cursor:not-allowed; }
+  .channel-card .ic { font-size:28px; margin-bottom:6px; }
+  .channel-card .name { font-weight:600; font-size:13px; }
+  .channel-card .ph2 { font-size:10px; color:var(--slds-text-weak); margin-top:3px; }
+
+  .wizard-foot { padding:14px 18px; border-top:1px solid var(--slds-border);
+    background:#fafaf9; display:flex; justify-content:space-between; }
+
+  .test-result { margin-top:14px; padding:12px; border-radius:4px; font-size:12px; display:none; }
+  .test-result.show { display:block; }
+  .test-result.success { background:#ecf7ee; color:var(--slds-green); border:1px solid #c3e6cb; }
+  .test-result.error { background:#fdecea; color:var(--slds-red); border:1px solid #f5c6cb; }
+
+  .legend { font-size:11px; color:var(--slds-text-weak); margin-top:8px; padding:8px 12px;
+    background:#f7f9fb; border-radius:4px; border-left:3px solid var(--slds-blue);
+    max-width:1400px; }
+  .legend strong { color:var(--slds-text); }
+
+  /* Soft-delete modal */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.5);
+    display:none; align-items:center; justify-content:center; z-index:9999; }
+  .modal-bg.show { display:flex; }
+  .modal { background:#fff; border-radius:6px; width:440px; max-width:90%; padding:0; overflow:hidden; }
+  .modal h3 { margin:0; padding:14px 18px; border-bottom:1px solid var(--slds-border); font-size:14px; }
+  .modal .body { padding:18px; }
+  .modal .foot { padding:12px 18px; border-top:1px solid var(--slds-border);
+    background:#fafaf9; display:flex; justify-content:flex-end; gap:8px; }
+
+  /* Empty state for channels list */
+  .mf-empty { display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:var(--slds-text-weak); padding:3rem; text-align:center; min-height:240px; }
+  .mf-empty svg { width:64px; height:64px; opacity:.35; margin-bottom:1rem; fill:var(--slds-text-weak); }
+  .mf-empty-title { font-size:16px; font-weight:600; color:#444; margin-bottom:.25rem; }
+  .mf-empty-sub { font-size:13px; margin-bottom:1rem; }
+
+  /* ============================================================
+     CONVERSATIONS SCREEN (from previous version)
+     ============================================================ */
+  .mf-chat-root { display:flex; height:100%; min-height:0; }
+  .mf-chat-list { width:320px; flex:0 0 320px; border-right:1px solid var(--slds-border);
+    background:#fafaf9; display:flex; flex-direction:column; }
+  .mf-chat-list-header { padding:.75rem; border-bottom:1px solid var(--slds-border); background:#fff; }
+  .mf-chat-list-scroll { flex:1; overflow-y:auto; }
+
+  .mf-conv-row { display:flex; gap:.65rem; padding:.65rem .75rem; cursor:pointer;
+    border-bottom:1px solid #f3f3f3; align-items:flex-start; }
+  .mf-conv-row:hover { background:#f3f3f3; }
+  .mf-conv-row.is-active { background:#eaf5fe; border-left:3px solid var(--slds-blue);
+    padding-left:calc(.75rem - 3px); }
+
+  .mf-avatar { width:40px; height:40px; border-radius:50%;
+    background:var(--slds-blue); color:#fff; font-weight:600; font-size:14px;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .mf-avatar.c2 { background:#5867e8; }
+  .mf-avatar.c3 { background:#0b827c; }
+  .mf-avatar.c4 { background:#c23934; }
+  .mf-avatar.c5 { background:#826ac9; }
+  .mf-avatar.c6 { background:#ea6608; }
+
+  .mf-conv-body { flex:1; min-width:0; }
+  .mf-conv-top { display:flex; justify-content:space-between; align-items:baseline; gap:.5rem; }
+  .mf-conv-name { font-weight:600; font-size:13px; color:#181818;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mf-conv-time { font-size:11px; color:#706e6b; flex-shrink:0; }
+  .mf-conv-preview { font-size:12px; color:#444; margin-top:2px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    display:flex; justify-content:space-between; gap:.5rem; }
+  .mf-unread-badge { background:var(--slds-blue); color:#fff; font-size:10px; font-weight:700;
+    border-radius:999px; padding:1px 7px; flex-shrink:0; }
+
+  .mf-chat-pane { flex:1; display:flex; flex-direction:column; min-width:0; background:#fff; }
+  .mf-chat-header { padding:.65rem .9rem; border-bottom:1px solid var(--slds-border);
+    display:flex; align-items:center; gap:.75rem; background:#fff; }
+  .mf-chat-header-meta { flex:1; min-width:0; }
+  .mf-chat-header-name { font-weight:600; font-size:14px; color:#181818; }
+  .mf-chat-header-status { font-size:11px; color:#706e6b; }
+
+  .mf-link-pill { display:inline-flex; align-items:center; gap:.35rem;
+    background:#eaf5fe; color:#014486; border:1px solid #aacbe2;
+    border-radius:999px; padding:.15rem .55rem; font-size:11px; font-weight:600; }
+  .mf-source-badge { display:inline-block; background:#f3f3f3; color:#444;
+    border-radius:4px; padding:1px 6px; font-size:10px; margin-left:.35rem; }
+
+  .mf-msg-area { flex:1; overflow-y:auto; padding:1rem 1.25rem; background:#f7f7f7;
+    background-image:
+      radial-gradient(circle at 25% 30%, rgba(1,118,211,.04) 0, transparent 40%),
+      radial-gradient(circle at 75% 70%, rgba(11,130,124,.04) 0, transparent 40%); }
+  .mf-msg-row { display:flex; margin-bottom:.65rem; }
+  .mf-msg-row.is-out { justify-content:flex-end; }
+  .mf-bubble { max-width:62%; padding:.55rem .75rem; border-radius:12px;
+    font-size:13px; line-height:1.4; box-shadow:0 1px 2px rgba(0,0,0,.06); word-wrap:break-word; }
+  .mf-bubble.is-in  { background:#fff; color:#181818; border-top-left-radius:4px; }
+  .mf-bubble.is-out { background:var(--slds-blue); color:#fff; border-top-right-radius:4px; }
+  .mf-bubble-meta { font-size:10px; margin-top:4px; opacity:.75;
+    display:flex; gap:.35rem; align-items:center; justify-content:flex-end; }
+  .mf-bubble.is-in .mf-bubble-meta { color:#706e6b; }
+
+  .mf-sys-msg { text-align:center; font-size:11px; color:#706e6b; margin:.75rem 0; }
+  .mf-sys-msg span { background:rgba(0,0,0,.06); padding:3px 10px; border-radius:10px; }
+
+  .mf-attach-card { display:flex; gap:.55rem; align-items:center;
+    background:rgba(255,255,255,.18); border-radius:8px; padding:.4rem .55rem; margin-top:.25rem; }
+  .mf-bubble.is-in .mf-attach-card { background:#f3f3f3; }
+  .mf-attach-icon { width:32px; height:32px; border-radius:6px;
+    background:rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .mf-bubble.is-in .mf-attach-icon { background:#e5e5e5; }
+  .mf-attach-icon svg { width:16px; height:16px; fill:currentColor; }
+  .mf-img-placeholder { width:240px; height:160px; border-radius:8px;
+    background:linear-gradient(135deg,#c5d8ee,#97b8d9);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:600; }
+
+  .mf-typing { padding:0 1.25rem .35rem; font-size:11px; color:#706e6b; font-style:italic; height:18px; }
+  .mf-typing .dot { display:inline-block; width:4px; height:4px; border-radius:50%;
+    background:#706e6b; margin:0 1px; animation:mf-blink 1.2s infinite ease-in-out; }
+  .mf-typing .dot:nth-child(2) { animation-delay:.15s; }
+  .mf-typing .dot:nth-child(3) { animation-delay:.3s; }
+  @keyframes mf-blink { 0%,80%,100% { opacity:.25; } 40% { opacity:1; } }
+
+  .mf-composer { border-top:1px solid var(--slds-border); padding:.65rem .9rem;
+    display:flex; gap:.55rem; align-items:flex-end; background:#fff; }
+  .mf-composer textarea { flex:1; resize:none; border:1px solid var(--slds-border); border-radius:8px;
+    padding:.55rem .75rem; font-family:inherit; font-size:13px;
+    min-height:38px; max-height:120px; outline:none; }
+  .mf-composer textarea:focus { border-color:var(--slds-blue); box-shadow:0 0 0 1px var(--slds-blue); }
+
+  .mf-conv-empty { height:100%; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; color:#706e6b; padding:2rem; text-align:center; }
+  .mf-conv-empty svg { width:64px; height:64px; opacity:.35; margin-bottom:1rem; fill:#706e6b; }
+
+  /* ============================================================
+     LEAD RECORD PAGE  +  embedded chat with channel switcher
+     ============================================================ */
+  .lead-page { max-width:1400px; }
+  .lead-head { background:linear-gradient(to bottom,#fafaf9,#f3f3f3);
+    border:1px solid var(--slds-border); border-radius:var(--radius);
+    padding:14px 18px; margin-bottom:14px; display:flex; align-items:center; gap:14px; }
+  .lead-head .lead-avatar { width:56px; height:56px; border-radius:50%;
+    background:linear-gradient(135deg,#5eb5f7,#0176d3); color:#fff;
+    font-size:20px; font-weight:600; display:flex; align-items:center; justify-content:center; }
+  .lead-head h1 { margin:0; font-size:18px; font-weight:600; }
+  .lead-head .lead-sub { font-size:12px; color:var(--slds-text-weak); margin-top:2px; }
+  .lead-head .lead-actions { margin-left:auto; display:flex; gap:6px; }
+
+  .lead-fields { display:grid; grid-template-columns:repeat(4,1fr); gap:14px 24px; }
+  .lead-field label { display:block; font-size:11px; color:var(--slds-text-weak);
+    text-transform:uppercase; letter-spacing:.3px; font-weight:600; margin-bottom:2px; }
+  .lead-field .val { font-size:13px; color:var(--slds-text); }
+
+  /* Embedded chat — narrower, inline variant of the workspace chat */
+  .lead-chat { display:flex; flex-direction:column; height:520px;
+    border:1px solid var(--slds-border); border-radius:var(--radius); background:#fff; overflow:hidden; }
+  .lead-chat .lead-chat-source-tabs {
+    display:flex; gap:0; border-bottom:1px solid var(--slds-border); background:#fafaf9;
+  }
+  .lead-chat .lead-chat-source-tabs button {
+    background:none; border:0; padding:10px 14px; font-size:12px; color:var(--slds-text-weak);
+    cursor:pointer; font-family:inherit; border-bottom:2px solid transparent; display:flex;
+    align-items:center; gap:6px; font-weight:500;
+  }
+  .lead-chat .lead-chat-source-tabs button:hover { color:var(--slds-blue); }
+  .lead-chat .lead-chat-source-tabs button.is-active {
+    color:var(--slds-blue); border-bottom-color:var(--slds-blue); font-weight:600;
+    background:#fff;
+  }
+  .lead-chat .lead-chat-source-tabs button .badge {
+    background:var(--slds-blue); color:#fff; border-radius:999px;
+    font-size:10px; padding:1px 6px; font-weight:700;
+  }
+  .lead-chat .lead-chat-source-tabs button.is-active .badge { background:var(--slds-blue-dark); }
+
+  /* ============================================================
+     CONVERSATIONS — channel filter row (above existing chips)
+     ============================================================ */
+  .mf-channel-filter { padding:.55rem .75rem; background:#fff;
+    border-bottom:1px solid var(--slds-border); display:flex; flex-direction:column; gap:.4rem; }
+  .mf-channel-filter .mf-cf-row { display:flex; gap:.35rem; flex-wrap:wrap; }
+  .mf-channel-filter .mf-cf-chip {
+    background:#fff; border:1px solid var(--slds-border); border-radius:14px;
+    padding:2px 9px; font-size:11px; cursor:pointer; color:var(--slds-text-weak);
+    display:inline-flex; align-items:center; gap:4px; font-family:inherit;
+  }
+  .mf-channel-filter .mf-cf-chip:hover { border-color:var(--slds-blue); color:var(--slds-blue); }
+  .mf-channel-filter .mf-cf-chip.is-active {
+    background:var(--slds-blue); border-color:var(--slds-blue); color:#fff; font-weight:600;
+  }
+  .mf-channel-filter select {
+    width:100%; padding:5px 8px; font-size:12px; border:1px solid var(--slds-border);
+    border-radius:4px; background:#fff; font-family:inherit;
+  }
+
+  /* ============================================================
+     SALESFORCE-STYLE UTILITY BAR  (bottom of viewport, global)
+     ============================================================ */
+  .mf-utility-bar {
+    position:fixed; bottom:0; left:0; right:0;
+    background:#fff; border-top:1px solid var(--slds-border);
+    box-shadow:0 -1px 4px rgba(0,0,0,.06);
+    height:32px; display:flex; align-items:center; padding:0 12px;
+    z-index:8000; font-size:12px;
+  }
+  .mf-utility-bar .mf-utility-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:0 12px; height:100%; cursor:pointer;
+    color:var(--slds-text); border-right:1px solid var(--slds-border);
+    background:none; border-top:0; border-bottom:0; border-left:0; font-family:inherit; font-size:12px;
+  }
+  .mf-utility-bar .mf-utility-btn:hover { background:#f3f3f3; }
+  .mf-utility-bar .mf-utility-btn.is-open { background:#eaf5fe; color:var(--slds-blue); font-weight:600; }
+  .mf-utility-bar .mf-util-badge {
+    background:var(--slds-red); color:#fff; border-radius:999px;
+    font-size:10px; padding:1px 6px; font-weight:700; min-width:18px; text-align:center;
+  }
+  .mf-utility-bar .mf-util-spacer { flex:1; }
+  .mf-utility-bar .mf-util-meta { color:var(--slds-text-weak); font-size:11px; }
+
+  /* Workspace gets bottom padding so utility bar doesn't cover it */
+  .mf-shell { padding-bottom:32px; }
+
+  /* Bottom popup panel — anchored above the utility bar */
+  .mf-util-popup {
+    position:fixed; bottom:32px; left:12px; width:380px; max-height:520px;
+    background:#fff; border:1px solid var(--slds-border); border-bottom:0;
+    border-radius:6px 6px 0 0; box-shadow:0 -4px 16px rgba(0,0,0,.15);
+    z-index:8001; display:none; flex-direction:column;
+  }
+  .mf-util-popup.is-open { display:flex; }
+  .mf-util-popup-header {
+    padding:10px 14px; background:#032d60; color:#fff;
+    border-radius:6px 6px 0 0; display:flex; align-items:center; gap:8px;
+    font-size:13px; font-weight:600;
+  }
+  .mf-util-popup-header .mf-up-icon { font-size:14px; }
+  .mf-util-popup-header .mf-up-spacer { flex:1; }
+  .mf-util-popup-header button {
+    background:none; border:0; color:#fff; font-size:18px; cursor:pointer; padding:0 4px;
+  }
+  .mf-util-popup-tabs {
+    display:flex; border-bottom:1px solid var(--slds-border); background:#fafaf9;
+  }
+  .mf-util-popup-tabs button {
+    flex:1; background:none; border:0; padding:8px; font-size:11px; cursor:pointer;
+    color:var(--slds-text-weak); font-family:inherit; border-bottom:2px solid transparent; font-weight:500;
+  }
+  .mf-util-popup-tabs button.is-active {
+    color:var(--slds-blue); border-bottom-color:var(--slds-blue); font-weight:600; background:#fff;
+  }
+  .mf-util-popup-body { flex:1; overflow-y:auto; }
+  .mf-util-row {
+    display:flex; gap:10px; padding:10px 14px; border-bottom:1px solid #f3f3f3; align-items:flex-start;
+  }
+  .mf-util-row:hover { background:#fafaf9; }
+  .mf-util-row .mf-avatar { width:34px; height:34px; font-size:12px; }
+  .mf-util-row .mf-util-meta-col { flex:1; min-width:0; }
+  .mf-util-row .mf-util-name { font-size:12px; font-weight:600; color:#181818;
+    display:flex; justify-content:space-between; gap:.5rem; }
+  .mf-util-row .mf-util-channel { font-size:10px; color:var(--slds-text-weak); margin:1px 0; }
+  .mf-util-row .mf-util-preview { font-size:11px; color:#444;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+  .mf-util-row .mf-util-actions { display:flex; gap:4px; margin-top:6px; }
+  .mf-util-row .mf-util-actions button {
+    font-size:10px; padding:2px 6px; border:1px solid var(--slds-border);
+    background:#fff; color:var(--slds-blue); border-radius:3px; cursor:pointer; font-family:inherit;
+  }
+  .mf-util-row .mf-util-actions button:hover { background:#eaf5fe; }
+  .mf-util-popup-empty { padding:30px 20px; text-align:center;
+    color:var(--slds-text-weak); font-size:12px; }
+  .mf-util-quick-reply {
+    border-top:1px solid var(--slds-border); padding:8px; display:flex; gap:6px; background:#fafaf9;
+  }
+  .mf-util-quick-reply input {
+    flex:1; padding:6px 10px; border:1px solid var(--slds-border); border-radius:4px;
+    font-size:12px; font-family:inherit; outline:none;
+  }
+  .mf-util-quick-reply input:focus { border-color:var(--slds-blue); }
+  .mf-util-quick-reply button {
+    padding:6px 12px; background:var(--slds-blue); color:#fff; border:0;
+    border-radius:4px; cursor:pointer; font-size:12px; font-family:inherit;
+  }
+
+  /* Toast stack */
+  .mf-toast-stack { position:fixed; top:1rem; left:50%; transform:translateX(-50%);
+    z-index:10000; display:flex; flex-direction:column; gap:.5rem; pointer-events:none; }
+  .mf-toast-stack .slds-notify_container { position:static; pointer-events:auto; }
+</style>
+</head>
+
+<body>
+
+<!-- ============================================================ -->
+<!-- SHELL                                                        -->
+<!-- ============================================================ -->
+<div class="mf-shell">
+
+  <nav class="mf-rail" aria-label="App nav">
+    <div class="mf-rail-btn" title="App Launcher">
+      <svg viewBox="0 0 24 24"><path d="M4 4h5v5H4zM10 4h5v5h-5zM16 4h5v5h-5zM4 10h5v5H4zM10 10h5v5h-5zM16 10h5v5h-5zM4 16h5v5H4zM10 16h5v5h-5zM16 16h5v5h-5z"/></svg>
+    </div>
+    <div class="mf-rail-btn is-active" data-tab="channels" title="Channels">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zm0 7.5L4.21 6 12 2.5 19.79 6 12 9.5zM2 17l10 5 10-5-2.18-1.09L12 19.5l-7.82-3.59L2 17zm0-5l10 5 10-5-2.18-1.09L12 14.5 4.18 10.91 2 12z"/></svg>
+    </div>
+    <div class="mf-rail-btn" data-tab="conversations" title="Conversations">
+      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>
+    </div>
+    <div class="mf-rail-btn" data-tab="lead" title="Lead Record (demo)">
+      <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+    </div>
+    <div class="mf-rail-btn" data-tab="settings" title="Settings">
+      <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94 0 .31.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+    </div>
+    <div class="mf-rail-sep"></div>
+  </nav>
+
+  <main class="mf-workspace">
+
+    <div class="mf-tabbar" role="tablist">
+      <div class="mf-tab is-active" data-tab="channels" role="tab">Channels</div>
+      <div class="mf-tab" data-tab="conversations" role="tab">Conversations</div>
+      <div class="mf-tab" data-tab="lead" role="tab">Lead Record</div>
+      <div class="mf-tab" data-tab="settings" role="tab">Settings</div>
+    </div>
+
+    <!-- =============== Screen 1: CHANNELS =============== -->
+    <!-- This screen has two sub-views: 'list' and 'wizard'.        -->
+    <section class="mf-screen" id="screen-channels">
+
+      <!-- ----- Sub-view: LIST ----- -->
+      <div id="channel-list-view">
+        <div class="panel">
+          <div class="panel-h">
+            <h2>Messenger Channels</h2>
+            <span class="lwc-tag">&lt;c-messenger-channel-list&gt;</span>
+          </div>
+          <div class="panel-b">
+            <div class="row" style="margin-bottom:14px; justify-content:space-between;">
+              <div class="row">
+                <input id="channel-search" placeholder="🔍 Search channels..."
+                       style="padding:6px 10px; border:1px solid var(--slds-border); border-radius:4px; width:240px; font-family:inherit; font-size:13px;" />
+                <select id="channel-type-filter" style="padding:6px 10px; border:1px solid var(--slds-border); border-radius:4px; font-family:inherit;">
+                  <option value="">All channel types</option>
+                  <option value="tg-bot">Telegram Bot</option>
+                  <option value="wa">WhatsApp Cloud</option>
+                  <option value="twilio">Twilio SMS</option>
+                  <option value="viber">Viber Bot</option>
+                  <option value="fb">Messenger</option>
+                  <option value="ig">Instagram Direct</option>
+                </select>
+                <select id="channel-status-filter" style="padding:6px 10px; border:1px solid var(--slds-border); border-radius:4px; font-family:inherit;">
+                  <option value="">All statuses</option>
+                  <option value="online">Online</option>
+                  <option value="offline">Offline</option>
+                  <option value="auth_required">Auth required</option>
+                  <option value="error">Error</option>
+                  <option value="draft">Draft</option>
+                </select>
+              </div>
+              <button class="btn brand" onclick="openWizard()">＋ New Channel</button>
+            </div>
+
+            <table class="slds-tbl" id="channels-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Active</th>
+                  <th>Messages (24h)</th>
+                  <th>Last Activity</th>
+                  <th style="width:200px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="channels-tbody"><!-- rendered by JS --></tbody>
+            </table>
+
+            <div class="mf-empty" id="channels-empty" style="display:none;">
+              <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+              <div class="mf-empty-title">No channels yet</div>
+              <div class="mf-empty-sub">Connect your first messenger channel to start receiving messages.</div>
+              <button class="btn brand" onclick="openWizard()">＋ New Channel</button>
+            </div>
+
+            <div class="legend">
+              <strong>Backed by:</strong> <code>Messenger_Channel__c</code> ·
+              status from <code>Session_Status__c</code> ∈ {online, offline, auth_required, error} ·
+              delete = soft (sets <code>Active__c=false</code>; hard delete only if zero <code>Messenger_Chat__c</code> children) ·
+              Resume Setup re-enters <code>channelSetupWizard</code> at last completed step.
+            </div>
+          </div>
+        </div>
+
+        <!-- Audit log mini -->
+        <div class="panel">
+          <div class="panel-h">
+            <h2>Recent Audit Events</h2>
+            <span class="lwc-tag">&lt;c-channel-audit-log&gt; · Channel_Audit_Log__c</span>
+          </div>
+          <div class="panel-b" style="padding:0;">
+            <table class="slds-tbl">
+              <thead><tr><th>Time</th><th>Channel</th><th>Event</th><th>User</th><th>Source</th></tr></thead>
+              <tbody id="audit-tbody">
+                <tr><td>14:22:01</td><td>Support WhatsApp</td><td><span class="pill ok">webhook_registered</span></td><td>admin@org</td><td>salesforce</td></tr>
+                <tr><td>14:21:55</td><td>Support WhatsApp</td><td><span class="pill ok">channel_activated</span></td><td>admin@org</td><td>salesforce</td></tr>
+                <tr><td>14:18:30</td><td>Viber Marketing</td><td><span class="pill err">hmac_verification_failed</span></td><td>system</td><td>salesforce</td></tr>
+                <tr><td>13:02:14</td><td>Twilio SMS — US</td><td><span class="pill warn">credential_expired</span></td><td>system</td><td>salesforce</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ----- Sub-view: WIZARD ----- -->
+      <div id="channel-wizard-view" style="display:none;">
+        <div class="panel">
+          <div class="panel-h">
+            <h2 id="wizard-title">New Channel Setup</h2>
+            <span class="lwc-tag">&lt;c-channel-setup-wizard&gt; · ChannelSetupController.cls</span>
+          </div>
+
+          <div class="wizard-steps" id="wiz-steps">
+            <div class="wizard-step active" data-step="1"><span class="num">1</span> Channel Type</div>
+            <div class="wizard-step" data-step="2"><span class="num">2</span> App Credentials</div>
+            <div class="wizard-step" data-step="3"><span class="num">3</span> Channel Config</div>
+            <div class="wizard-step" data-step="4"><span class="num">4</span> Test Connection</div>
+            <div class="wizard-step" data-step="5"><span class="num">5</span> Activate &amp; Register Webhook</div>
+          </div>
+
+          <!-- step 1 -->
+          <div class="wizard-body" data-body="1">
+            <h3 style="margin-top:0; font-size:14px;">Choose channel type</h3>
+            <p style="color:var(--slds-text-weak); font-size:12px;">
+              Phase 1 supports six native providers. Greyed-out types are scheduled for Phase 2.
+            </p>
+            <div class="channel-cards">
+              <div class="channel-card selected" data-type="tg-bot" onclick="selectChannelType(this,'tg-bot')"><div class="ic">📨</div><div class="name">Telegram Bot</div><div class="ph2">Bot API</div></div>
+              <div class="channel-card" data-type="wa" onclick="selectChannelType(this,'wa')"><div class="ic">💚</div><div class="name">WhatsApp Cloud</div><div class="ph2">Meta Graph API</div></div>
+              <div class="channel-card" data-type="viber" onclick="selectChannelType(this,'viber')"><div class="ic">💜</div><div class="name">Viber Bot</div><div class="ph2">Public Account</div></div>
+              <div class="channel-card" data-type="twilio" onclick="selectChannelType(this,'twilio')"><div class="ic">💬</div><div class="name">Twilio SMS</div><div class="ph2">Programmable SMS</div></div>
+              <div class="channel-card" data-type="fb" onclick="selectChannelType(this,'fb')"><div class="ic">🔵</div><div class="name">Messenger</div><div class="ph2">Facebook Page</div></div>
+              <div class="channel-card" data-type="ig" onclick="selectChannelType(this,'ig')"><div class="ic">📷</div><div class="name">Instagram Direct</div><div class="ph2">Meta Graph API</div></div>
+              <div class="channel-card disabled" title="Phase 2"><div class="ic">📱</div><div class="name">Telegram User (MTProto)</div><div class="ph2">Phase 2</div></div>
+              <div class="channel-card disabled" title="Phase 2"><div class="ic">🍎</div><div class="name">Apple Messages</div><div class="ph2">Phase 2</div></div>
+              <div class="channel-card disabled" title="Phase 2"><div class="ic">🐦</div><div class="name">Vonage / Bird</div><div class="ph2">Phase 2</div></div>
+            </div>
+          </div>
+
+          <!-- step 2 -->
+          <div class="wizard-body" data-body="2" style="display:none;">
+            <h3 style="margin-top:0; font-size:14px;">App credentials</h3>
+            <p style="color:var(--slds-text-weak); font-size:12px;">
+              Account-level. Stored in the matching <code>*_App__c</code> object,
+              AES-256 encrypted via <code>EncryptionService.cls</code>. Reusable across multiple channels.
+            </p>
+            <div class="field"><label>App Name *</label>
+              <input id="wf-app-name" value="MessageForge Production" />
+            </div>
+            <div class="grid2">
+              <div class="field"><label>API ID *</label>
+                <input id="wf-api-id" placeholder="123456" />
+                <div class="help">From the provider's developer portal</div>
+              </div>
+              <div class="field"><label>API Hash *</label>
+                <input id="wf-api-hash" type="password" placeholder="••••••••••••••" />
+                <div class="help">Encrypted at rest</div>
+              </div>
+            </div>
+            <div class="field"><label>Owner Email</label>
+              <input id="wf-owner" value="admin@cyprus-co.com" />
+            </div>
+          </div>
+
+          <!-- step 3 -->
+          <div class="wizard-body" data-body="3" style="display:none;">
+            <h3 style="margin-top:0; font-size:14px;">Channel configuration</h3>
+            <p style="color:var(--slds-text-weak); font-size:12px;">
+              Maps 1:1 to the channel-specific <code>*_Config__c</code> + parent <code>Messenger_Channel__c</code>.
+            </p>
+            <div class="grid2">
+              <div class="field"><label>Channel Name (internal) *</label>
+                <input id="wf-name" value="Sales Bot — EU" />
+              </div>
+              <div class="field"><label>Bot / Account Handle</label>
+                <input id="wf-handle" value="@msgforge_sales_bot" />
+              </div>
+            </div>
+            <div class="field"><label>Bot Token / API Key *</label>
+              <input id="wf-token" type="password" value="••••••••••••••••••••••••••••••••" />
+              <div class="help">From @BotFather (or equivalent). Encrypted at rest. Webhook secret will be auto-derived.</div>
+            </div>
+            <div class="grid2">
+              <div class="field"><label>Default Assignee</label>
+                <select>
+                  <option>Group: EU Sales Team</option>
+                  <option>User: Lev Y.</option>
+                  <option>Unassigned (round-robin)</option>
+                </select>
+              </div>
+              <div class="field"><label>Auto-link to</label>
+                <select>
+                  <option>Lead (by phone, fallback to chat ID)</option>
+                  <option>Contact</option>
+                  <option>Always create as orphan</option>
+                </select>
+              </div>
+            </div>
+            <div class="field"><label>Allowed update types</label>
+              <div style="display:flex; gap:14px; font-size:12px; margin-top:6px;">
+                <label><input type="checkbox" checked /> message</label>
+                <label><input type="checkbox" checked /> edited_message</label>
+                <label><input type="checkbox" checked /> callback_query</label>
+                <label><input type="checkbox" /> inline_query</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- step 4 -->
+          <div class="wizard-body" data-body="4" style="display:none;">
+            <h3 style="margin-top:0; font-size:14px;">Test connection</h3>
+            <p style="color:var(--slds-text-weak); font-size:12px;">
+              Calls <code>ChannelSetupController.testConnection</code> → makes a live <code>getMe</code>
+              callout via Named Credential. No DML happens at this step.
+            </p>
+            <button class="btn brand" onclick="runConnectionTest()">▶ Run Connection Test</button>
+            <div class="test-result success" id="test-ok">
+              ✓ <strong>Connection successful</strong><br>
+              Bot ID: <code>7842419015</code><br>
+              Bot username: <code>@msgforge_sales_bot</code><br>
+              Can join groups: <code>true</code> · Can read messages: <code>true</code><br>
+              Round-trip: 187 ms
+            </div>
+          </div>
+
+          <!-- step 5 -->
+          <div class="wizard-body" data-body="5" style="display:none;">
+            <h3 style="margin-top:0; font-size:14px;">Activate &amp; register webhook</h3>
+            <p style="color:var(--slds-text-weak); font-size:12px;">
+              Final step. Sets <code>Status__c='active'</code>, calls <code>setWebhook</code>,
+              and writes a <code>channel_activated</code> audit row.
+            </p>
+            <div class="field"><label>Webhook URL (read-only)</label>
+              <input readonly value="https://msgforge-prod.my.salesforce-sites.com/services/apexrest/tgint/webhook/telegram_bot/a0X5g00000ABCDe" />
+            </div>
+            <div class="field"><label>HMAC Secret</label>
+              <input readonly value="auto-generated · stored in *_Config__c.Webhook_Secret__c" />
+            </div>
+            <div class="field"><label>Sharing</label>
+              <select><option>Group: EU Sales Team (3 users)</option></select>
+              <div class="help">Creates corresponding <code>Channel_User_Access__c</code> rows · Apex Managed Sharing recalcs on save.</div>
+            </div>
+            <div style="margin-top:14px; padding:12px; background:#fff5e6; border-left:3px solid var(--slds-amber); font-size:12px;">
+              ⚠ After activation, the provider will start delivering updates immediately.
+              The kill switch (<code>Is_Compromised__c</code>) can pause this in one click.
+            </div>
+          </div>
+
+          <div class="wizard-foot">
+            <button class="btn" onclick="prevStep()" id="wiz-back">← Back</button>
+            <div>
+              <button class="btn" onclick="closeWizard()">Cancel</button>
+              <button class="btn brand" onclick="nextStep()" id="wiz-next">Next →</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend">
+          <strong>Apex contract:</strong>
+          <code>listChannelTypes()</code> ·
+          <code>createApp(channelType, payload)</code> ·
+          <code>createChannel(appId, payload)</code> ·
+          <code>testConnection(channelId)</code> ·
+          <code>activateChannel(channelId)</code> ·
+          <code>registerWebhook(channelId)</code>.
+          Re-entry behavior: <strong>resume from last completed step</strong> (proposed, see §10.7 in handoff).
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =============== Screen 2: CONVERSATIONS =============== -->
+    <section class="mf-screen mf-screen-chat" id="screen-conversations" style="display:none;">
+      <div class="mf-chat-root">
+
+        <aside class="mf-chat-list">
+          <!-- Channel filter — type chips + per-channel dropdown -->
+          <div class="mf-channel-filter">
+            <div class="mf-cf-row" id="cf-type-row">
+              <button class="mf-cf-chip is-active" data-ctype="">All</button>
+              <button class="mf-cf-chip" data-ctype="tg-bot">📨 Telegram</button>
+              <button class="mf-cf-chip" data-ctype="wa">💚 WhatsApp</button>
+              <button class="mf-cf-chip" data-ctype="twilio">💬 SMS</button>
+              <button class="mf-cf-chip" data-ctype="viber">💜 Viber</button>
+            </div>
+            <select id="cf-channel-select"><!-- options rendered by JS --></select>
+          </div>
+
+          <div class="mf-chat-list-header">
+            <div class="slds-form-element">
+              <div class="slds-form-element__control slds-input-has-icon slds-input-has-icon_left">
+                <svg class="slds-icon slds-input__icon slds-input__icon_left slds-icon-text-default"
+                     viewBox="0 0 24 24" style="fill:#706e6b;">
+                  <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                </svg>
+                <input type="text" class="slds-input" placeholder="Search conversations" id="conv-search" />
+              </div>
+            </div>
+            <div class="slds-m-top_x-small" style="display:flex; gap:.35rem; flex-wrap:wrap;">
+              <button class="slds-button slds-button_outline-brand" data-filter="all" style="flex:1; font-size:11px; padding:0 .5rem; height:24px;">All</button>
+              <button class="slds-button slds-button_neutral" data-filter="unread" style="flex:1; font-size:11px; padding:0 .5rem; height:24px;">Unread</button>
+            </div>
+          </div>
+          <div class="mf-chat-list-scroll" id="conv-list"></div>
+        </aside>
+
+        <section class="mf-chat-pane" id="chat-pane">
+          <div class="mf-conv-empty">
+            <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+            <div style="font-weight:600; color:#444;">No conversation selected</div>
+            <div style="font-size:13px;">Pick a conversation from the list to view messages.</div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- =============== Screen 3: SETTINGS =============== -->
+    <section class="mf-screen" id="screen-settings" style="display:none;">
+      <div class="panel">
+        <div class="panel-h"><h2>Settings</h2></div>
+        <div class="panel-b" style="color:var(--slds-text-weak);">
+          Settings UI is out of scope for this prototype.
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== Screen 4: LEAD RECORD =============== -->
+    <!-- Demo of how the embedded chat LWC sits on a Lead record. -->
+    <!-- The channel switcher tabs at the top of the chat let the   -->
+    <!-- agent reply to the same Lead through different messengers. -->
+    <section class="mf-screen" id="screen-lead" style="display:none;">
+      <div class="lead-page">
+        <div class="lead-head">
+          <div class="lead-avatar">MC</div>
+          <div>
+            <h1>Maria Constantinou</h1>
+            <div class="lead-sub">Lead · MC Properties Ltd · Limassol, CY</div>
+          </div>
+          <div class="lead-actions">
+            <button class="btn">Edit</button>
+            <button class="btn">Convert</button>
+            <button class="btn brand">New Task</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-h">
+            <h2>Lead Details</h2>
+            <span class="lwc-tag">standard Lead record page</span>
+          </div>
+          <div class="panel-b">
+            <div class="lead-fields">
+              <div class="lead-field"><label>Phone</label><div class="val">+357 99 123 456</div></div>
+              <div class="lead-field"><label>Email</label><div class="val">maria@mc-properties.cy</div></div>
+              <div class="lead-field"><label>Status</label><div class="val">Working — Contacted</div></div>
+              <div class="lead-field"><label>Lead Source</label><div class="val">Telegram Bot</div></div>
+              <div class="lead-field"><label>Owner</label><div class="val">Lev Y.</div></div>
+              <div class="lead-field"><label>Industry</label><div class="val">Real Estate</div></div>
+              <div class="lead-field"><label>Annual Revenue</label><div class="val">€2.4M</div></div>
+              <div class="lead-field"><label>Created</label><div class="val">2 days ago</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Embedded chat LWC -->
+        <div class="panel">
+          <div class="panel-h">
+            <h2>Messenger Conversations</h2>
+            <span class="lwc-tag">&lt;c-messenger-chat&gt; · embedded mode (recordId binding)</span>
+          </div>
+          <div class="panel-b" style="padding:0;">
+            <div class="lead-chat" id="lead-chat-root">
+              <!-- Channel switcher tabs (rendered by JS) -->
+              <div class="lead-chat-source-tabs" id="lead-chat-tabs"></div>
+              <!-- The chat thread itself (rendered by JS) -->
+              <div id="lead-chat-pane" style="flex:1; display:flex; flex-direction:column; min-height:0;"></div>
+            </div>
+            <div class="legend" style="margin:12px;">
+              <strong>[OPEN §10.1]</strong> Whether to merge channels into a unified timeline or keep them as
+              separate threads (current design) is still under review. The current data model supports per-channel
+              <code>Messenger_Chat__c</code> records linked via <code>Lead/Contact</code> lookup.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============================================================ -->
+<!-- Soft-delete modal                                            -->
+<!-- ============================================================ -->
+<div class="modal-bg" id="delModal">
+  <div class="modal">
+    <h3>Delete channel?</h3>
+    <div class="body">
+      <p>You are about to soft-delete <strong id="delName">…</strong>.</p>
+      <p style="font-size:12px; color:var(--slds-text-weak);">
+        This sets <code>Active__c=false</code> and unregisters the webhook with the provider.
+        Existing chats and messages are preserved. The channel can be reactivated within 30 days.
+      </p>
+      <label style="font-size:12px;">
+        <input type="checkbox" id="delHard" /> Permanently delete (only allowed if zero linked chats)
+      </label>
+    </div>
+    <div class="foot">
+      <button class="btn" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn destructive" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- BOTTOM UTILITY BAR  (Salesforce-style, global)                -->
+<!-- ============================================================ -->
+<div class="mf-utility-bar" id="utility-bar">
+  <button class="mf-utility-btn" id="util-btn-messages" onclick="toggleUtilPopup()">
+    💬 Messages <span class="mf-util-badge" id="util-badge">0</span>
+  </button>
+  <button class="mf-utility-btn" onclick="toast('success','History panel — not implemented')">⏱ History</button>
+  <button class="mf-utility-btn" onclick="toast('success','Notes panel — not implemented')">📝 Notes</button>
+  <button class="mf-utility-btn" onclick="toast('success','To-do list — not implemented')">✓ To Do</button>
+  <div class="mf-util-spacer"></div>
+  <span class="mf-util-meta">MessageForge · Phase 1 prototype</span>
+</div>
+
+<!-- Popup that floats above the utility bar — like the SMS Ninja screenshot -->
+<div class="mf-util-popup" id="util-popup">
+  <div class="mf-util-popup-header">
+    <span class="mf-up-icon">💬</span>
+    <span>Messenger Inbox</span>
+    <span class="mf-up-spacer"></span>
+    <button onclick="toggleUtilPopup()" title="Minimize">−</button>
+  </div>
+  <div class="mf-util-popup-tabs" id="util-popup-tabs">
+    <button class="is-active" data-uptab="new">New Chats <span id="up-count-new"></span></button>
+    <button data-uptab="live">Live Chats</button>
+    <button data-uptab="pending">Pending</button>
+  </div>
+  <div class="mf-util-popup-body" id="util-popup-body"><!-- rendered by JS --></div>
+</div>
+
+<!-- Toast stack -->
+<div class="mf-toast-stack" id="toast-stack"></div>
+
+
+<!-- ============================================================ -->
+<!-- JS                                                            -->
+<!-- ============================================================ -->
+<script>
+/* =========================================================
+   STATIC METADATA — channel-type catalog
+   ========================================================= */
+const CHANNEL_TYPES = {
+  'tg-bot': { icon:'📨', label:'Telegram Bot' },
+  'wa':     { icon:'💚', label:'WhatsApp Cloud' },
+  'viber':  { icon:'💜', label:'Viber Bot' },
+  'twilio': { icon:'💬', label:'Twilio SMS' },
+  'fb':     { icon:'🔵', label:'Messenger' },
+  'ig':     { icon:'📷', label:'Instagram Direct' },
+};
+
+const STATUS_LABELS = {
+  online:        { cls:'ok',    text:'● online' },
+  offline:       { cls:'draft', text:'● offline' },
+  auth_required: { cls:'warn',  text:'● auth_required' },
+  error:         { cls:'err',   text:'● error' },
+  draft:         { cls:'draft', text:'● draft' },
+};
+
+/* =========================================================
+   STATE
+   ========================================================= */
+const state = {
+  activeTab: 'channels',
+  channelView: 'list',                    // 'list' | 'wizard'
+
+  channels: [
+    { id:'c1', name:'Sales Bot — EU',         sub:'@msgforge_sales_bot', type:'tg-bot', status:'online',        active:true,  msgs24:247,   lastActivity:'2 min ago' },
+    { id:'c2', name:'Support WhatsApp',       sub:'+357 99 123 456',     type:'wa',     status:'online',        active:true,  msgs24:1084,  lastActivity:'just now' },
+    { id:'c3', name:'Twilio SMS — US',        sub:'+1 415 555 0192',     type:'twilio', status:'auth_required', active:true,  msgs24:33,    lastActivity:'1 h ago' },
+    { id:'c4', name:'Viber Marketing',        sub:'@msgforge',           type:'viber',  status:'error',         active:false, msgs24:0,     lastActivity:'3 h ago', errorNote:'HMAC fail × 4' },
+    { id:'c5', name:'FB Page — MessageForge', sub:'page_id=109887',      type:'fb',     status:'draft',         active:false, msgs24:null,  lastActivity:'never' },
+  ],
+
+  // Wizard
+  wizard: { step:1, type:'tg-bot', editingId:null },
+
+  // Delete
+  deletingId: null,
+
+  // Conversations
+  activeConvId: 'cv1',
+  filter: 'all',
+  channelTypeFilter: '',     // '' | 'tg-bot' | 'wa' | 'twilio' | 'viber' | 'fb' | 'ig'
+  channelIdFilter: '',       // '' | specific channel id (e.g. 'c1')
+  conversations: seedConversations(),
+
+  // Lead page (demo lead — Maria Constantinou). Multiple threads, one per channel.
+  leadActiveChannel: 'c1',
+  leadChannels: ['c1','c2','c3'],   // channels this lead has been contacted on
+  leadThreads: {
+    c1: [
+      { id:1, dir:'in',  type:'text', text:'Hi! Is the Limassol apartment still available?', time:'09:12' },
+      { id:2, dir:'out', type:'text', text:"Hello Maria! Yes it is. Would you like to schedule a viewing?", time:'09:14', read:true },
+      { id:3, dir:'in',  type:'text', text:'Yes please. Wednesday afternoon works for me.', time:'09:15' },
+    ],
+    c2: [
+      { id:1, dir:'in',  type:'text', text:'Following up on WhatsApp — could you also send the pricing PDF?', time:'10:02' },
+      { id:2, dir:'out', type:'text', text:'Of course, sending it now.', time:'10:04', read:true },
+      { id:3, dir:'out', type:'file', text:'mc-properties-pricing-2026.pdf', time:'10:04', read:true },
+    ],
+    c3: [
+      { id:1, dir:'out', type:'text', text:'Reminder: viewing tomorrow at 14:00. Reply Y to confirm.', time:'Yesterday', read:true },
+      { id:2, dir:'in',  type:'text', text:'Y', time:'Yesterday' },
+    ],
+  },
+
+  // Utility bar popup
+  utilOpen: false,
+  utilTab: 'new',
+};
+
+function seedConversations() {
+  const now = Date.now(), min = 60_000;
+  // channelId links each conversation to a row in state.channels.
+  // The channel's type determines which icon/source label appears.
+  const mk = (id, name, channelId, msgs, unread = 0, lastMin = 5) => ({
+    id, name, channelId, unread,
+    lastTime: new Date(now - lastMin * min),
+    online: Math.random() > 0.5,
+    messages: msgs,
+  });
+  return [
+    mk('cv1','Maria Constantinou','c1', [
+      { id:1, dir:'in',  type:'text', text:'Hi! Is the Limassol apartment still available?', time:'09:12' },
+      { id:2, dir:'out', type:'text', text:"Hello Maria! Yes it is. Would you like to schedule a viewing?", time:'09:14', read:true },
+      { id:3, dir:'in',  type:'text', text:'Yes please. Wednesday afternoon works for me.', time:'09:15' },
+      { id:4, dir:'sys', text:'Conversation linked to Lead: Maria Constantinou' },
+      { id:5, dir:'out', type:'text', text:"Perfect, I'll send a calendar invite. Anything specific you'd like to see?", time:'09:16', read:true },
+      { id:6, dir:'in',  type:'image', text:'Here is the listing I saw', time:'09:18' },
+    ], 2, 3),
+    mk('cv2','Dmitri Volkov','c2', [
+      { id:1, dir:'in',  type:'text', text:'My order #4471 hasn\'t arrived yet', time:'08:45' },
+      { id:2, dir:'out', type:'text', text:'Let me check that for you right away.', time:'08:47', read:true },
+      { id:3, dir:'in',  type:'file', text:'order-receipt.pdf', time:'08:48' },
+    ], 1, 25),
+    mk('cv3','Elena Papadopoulos','c2',[
+      { id:1, dir:'in', type:'text', text:'Thanks for the quick response yesterday!', time:'Yesterday' },
+    ], 0, 60*18),
+    mk('cv4','Yiannis K.','c1',[
+      { id:1, dir:'in', type:'text', text:'Pricing for the office space please', time:'Mon' },
+    ], 1, 60*48),
+    mk('cv5','Sofia Markou','c3',[
+      { id:1, dir:'out', type:'text', text:"I'll get back to you tomorrow", time:'Sun', read:true },
+    ], 0, 60*72),
+    mk('cv6','Andreas P.','c4',[
+      { id:1, dir:'in', type:'text', text:'Unsubscribe', time:'Sun' },
+    ], 0, 60*80),
+    mk('cv7','Christina N.','c2',[
+      { id:1, dir:'in', type:'text', text:'Refund request for order #3392', time:'Sat' },
+    ], 3, 60*96),
+    mk('cv8','Pavlos M.','c3',[
+      { id:1, dir:'in', type:'text', text:'Are you free for a call?', time:'Fri' },
+    ], 1, 60*120),
+    mk('cv9','Nikol Demetriou','c1',[
+      { id:1, dir:'out', type:'text', text:'Sent you the contract', time:'Thu', read:true },
+    ], 0, 60*144),
+    mk('cv10','Georgios L.','c2',[
+      { id:1, dir:'in', type:'text', text:'How do I reset my password?', time:'Thu' },
+    ], 0, 60*150),
+    mk('cv11','Anastasia V.','c1',[
+      { id:1, dir:'in', type:'text', text:'Loved the demo, thank you!', time:'Wed' },
+    ], 0, 60*170),
+    mk('cv12','Petros C.','c4',[
+      { id:1, dir:'in', type:'text', text:'Send me the brochure', time:'Wed' },
+    ], 0, 60*180),
+  ];
+}
+
+/* Helper: get the channel object for a conversation */
+function convChannel(c) {
+  return state.channels.find(ch => ch.id === c.channelId) || null;
+}
+
+/* =========================================================
+   TAB SWITCHING
+   ========================================================= */
+function setTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll('.mf-tab').forEach(el =>
+    el.classList.toggle('is-active', el.dataset.tab === tab));
+  document.querySelectorAll('.mf-rail-btn[data-tab]').forEach(el =>
+    el.classList.toggle('is-active', el.dataset.tab === tab));
+  document.getElementById('screen-channels').style.display      = tab === 'channels'      ? '' : 'none';
+  document.getElementById('screen-conversations').style.display = tab === 'conversations' ? '' : 'none';
+  document.getElementById('screen-lead').style.display          = tab === 'lead'          ? '' : 'none';
+  document.getElementById('screen-settings').style.display      = tab === 'settings'      ? '' : 'none';
+  if (tab === 'conversations') renderConversations();
+  if (tab === 'lead') renderLeadChat();
+}
+document.querySelectorAll('[data-tab]').forEach(el =>
+  el.addEventListener('click', () => setTab(el.dataset.tab)));
+
+/* =========================================================
+   CHANNELS — list rendering + filtering
+   ========================================================= */
+function renderChannels() {
+  const tbody = document.getElementById('channels-tbody');
+  const table = document.getElementById('channels-table');
+  const empty = document.getElementById('channels-empty');
+
+  const search   = (document.getElementById('channel-search').value || '').toLowerCase();
+  const typeFlt  = document.getElementById('channel-type-filter').value;
+  const statFlt  = document.getElementById('channel-status-filter').value;
+
+  const rows = state.channels.filter(c => {
+    if (search && !c.name.toLowerCase().includes(search) && !(c.sub || '').toLowerCase().includes(search)) return false;
+    if (typeFlt && c.type !== typeFlt) return false;
+    if (statFlt && c.status !== statFlt) return false;
+    return true;
+  });
+
+  if (state.channels.length === 0) {
+    table.style.display = 'none';
+    empty.style.display = 'flex';
+    return;
+  }
+  table.style.display = '';
+  empty.style.display = 'none';
+
+  tbody.innerHTML = rows.map(c => {
+    const t = CHANNEL_TYPES[c.type] || { icon:'•', label:c.type };
+    const s = STATUS_LABELS[c.status] || { cls:'draft', text:c.status };
+    const errorLine = c.status === 'error' && c.errorNote
+      ? `<div style="font-size:10px; color:var(--slds-red); margin-top:2px;">${escapeHtml(c.errorNote)}</div>` : '';
+    // Action buttons differ by status
+    const primaryAction = c.status === 'draft'         ? `<button class="btn sm" onclick="resumeSetup('${c.id}')">Resume Setup</button>`
+                        : c.status === 'auth_required' ? `<button class="btn sm" onclick="reauth('${c.id}')">Reauth</button>`
+                        : c.status === 'error'         ? `<button class="btn sm" onclick="viewLogs('${c.id}')">Logs</button>`
+                        :                                `<button class="btn sm" onclick="openChannel('${c.id}')">Open</button>`;
+    const editBtn = c.status === 'draft' ? '' : `<button class="btn sm" onclick="editChannel('${c.id}')">Edit</button>`;
+    const delLabel = c.status === 'draft' ? 'Discard' : 'Delete';
+
+    return `
+      <tr>
+        <td>
+          <strong>${escapeHtml(c.name)}</strong>
+          <div style="font-size:11px; color:var(--slds-text-weak);">${escapeHtml(c.sub || '')}</div>
+        </td>
+        <td>${t.icon} ${escapeHtml(t.label)}</td>
+        <td><span class="pill ${s.cls}">${s.text}</span>${errorLine}</td>
+        <td><input type="checkbox" ${c.active ? 'checked' : ''} onchange="toggleActive('${c.id}', this.checked)" /></td>
+        <td>${c.msgs24 == null ? '—' : c.msgs24.toLocaleString()}</td>
+        <td>${escapeHtml(c.lastActivity)}</td>
+        <td>
+          ${primaryAction}
+          ${editBtn}
+          <button class="btn sm destructive" onclick="askDelete('${c.id}')">${delLabel}</button>
+        </td>
+      </tr>`;
+  }).join('') || `<tr><td colspan="7" style="padding:24px; text-align:center; color:var(--slds-text-weak);">No channels match the current filters.</td></tr>`;
+}
+
+document.getElementById('channel-search').addEventListener('input', renderChannels);
+document.getElementById('channel-type-filter').addEventListener('change', renderChannels);
+document.getElementById('channel-status-filter').addEventListener('change', renderChannels);
+
+function toggleActive(id, on) {
+  const ch = state.channels.find(c => c.id === id); if (!ch) return;
+  ch.active = on;
+  toast('success', `${ch.name} ${on ? 'activated' : 'deactivated'}`);
+}
+
+/* Action button stubs */
+function openChannel(id) {
+  const ch = state.channels.find(c => c.id === id);
+  setTab('conversations');
+  toast('success', `Opened workspace for "${ch?.name}"`);
+}
+function reauth(id)    { toast('success', `Re-auth flow started for "${chName(id)}"`); }
+function viewLogs(id)  { toast('success', `Loading logs for "${chName(id)}"`); }
+function chName(id)    { return state.channels.find(c => c.id === id)?.name || ''; }
+
+/* =========================================================
+   WIZARD
+   ========================================================= */
+function openWizard() {
+  state.wizard = { step:1, type:'tg-bot', editingId:null };
+  document.getElementById('wizard-title').textContent = 'New Channel Setup';
+  resetWizardSelection('tg-bot');
+  resetWizardFields();
+  showWizardView(true);
+  goToStep(1);
+}
+
+function editChannel(id) {
+  const ch = state.channels.find(c => c.id === id); if (!ch) return;
+  state.wizard = { step:3, type:ch.type, editingId:id };  // jump straight to channel-config step
+  document.getElementById('wizard-title').textContent = `Edit Channel — ${ch.name}`;
+  resetWizardSelection(ch.type);
+  resetWizardFields();
+  document.getElementById('wf-name').value   = ch.name;
+  document.getElementById('wf-handle').value = ch.sub || '';
+  showWizardView(true);
+  goToStep(3);
+}
+
+function resumeSetup(id) {
+  const ch = state.channels.find(c => c.id === id); if (!ch) return;
+  state.wizard = { step:2, type:ch.type, editingId:id };
+  document.getElementById('wizard-title').textContent = `Resume Setup — ${ch.name}`;
+  resetWizardSelection(ch.type);
+  resetWizardFields();
+  showWizardView(true);
+  goToStep(2);
+  toast('success', `Resumed setup at step 2`);
+}
+
+function closeWizard() { showWizardView(false); }
+
+function showWizardView(show) {
+  state.channelView = show ? 'wizard' : 'list';
+  document.getElementById('channel-list-view').style.display   = show ? 'none' : '';
+  document.getElementById('channel-wizard-view').style.display = show ? '' : 'none';
+}
+
+function resetWizardSelection(type) {
+  state.wizard.type = type;
+  document.querySelectorAll('.channel-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.type === type);
+  });
+}
+function selectChannelType(el, type) {
+  if (el.classList.contains('disabled')) return;
+  document.querySelectorAll('.channel-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  state.wizard.type = type;
+}
+
+function resetWizardFields() {
+  document.getElementById('test-ok').classList.remove('show');
+}
+
+function goToStep(n) {
+  state.wizard.step = n;
+  document.querySelectorAll('#wiz-steps .wizard-step').forEach(s => {
+    const sn = +s.dataset.step;
+    s.classList.toggle('active', sn === n);
+    s.classList.toggle('done',   sn < n);
+  });
+  document.querySelectorAll('[data-body]').forEach(b =>
+    b.style.display = (+b.dataset.body === n ? 'block' : 'none'));
+  document.getElementById('wiz-next').textContent = n === 5 ? '✓ Activate' : 'Next →';
+  document.getElementById('wiz-back').style.visibility = n === 1 ? 'hidden' : 'visible';
+}
+
+function nextStep() {
+  if (state.wizard.step < 5) { goToStep(state.wizard.step + 1); return; }
+  saveChannel();
+}
+function prevStep() { if (state.wizard.step > 1) goToStep(state.wizard.step - 1); }
+
+function runConnectionTest() {
+  setTimeout(() => document.getElementById('test-ok').classList.add('show'), 400);
+}
+
+function saveChannel() {
+  const name   = document.getElementById('wf-name').value.trim()   || 'New Channel';
+  const handle = document.getElementById('wf-handle').value.trim() || '';
+  const type   = state.wizard.type;
+
+  if (state.wizard.editingId) {
+    const ch = state.channels.find(c => c.id === state.wizard.editingId);
+    ch.name = name;
+    ch.sub  = handle;
+    ch.type = type;
+    if (ch.status === 'draft') { ch.status = 'online'; ch.active = true; ch.lastActivity = 'just now'; }
+    toast('success', `Channel "${name}" saved`);
+  } else {
+    state.channels.push({
+      id: 'c' + Date.now(),
+      name, sub: handle, type,
+      status: 'online', active: true,
+      msgs24: 0, lastActivity: 'just now',
+    });
+    toast('success', `Channel "${name}" activated`);
+  }
+  renderChannels();
+  closeWizard();
+}
+
+/* =========================================================
+   DELETE
+   ========================================================= */
+function askDelete(id) {
+  state.deletingId = id;
+  const ch = state.channels.find(c => c.id === id);
+  document.getElementById('delName').textContent = ch ? ch.name : 'this channel';
+  document.getElementById('delHard').checked = false;
+  document.getElementById('delModal').classList.add('show');
+}
+function closeDeleteModal() { document.getElementById('delModal').classList.remove('show'); }
+function confirmDelete() {
+  const ch = state.channels.find(c => c.id === state.deletingId);
+  const hard = document.getElementById('delHard').checked;
+  if (hard) {
+    state.channels = state.channels.filter(c => c.id !== state.deletingId);
+    toast('error', `Channel "${ch?.name}" permanently deleted`);
+  } else {
+    if (ch) { ch.active = false; ch.status = 'offline'; }
+    toast('error', `Channel "${ch?.name}" soft-deleted (Active__c=false)`);
+  }
+  renderChannels();
+  closeDeleteModal();
+}
+
+/* =========================================================
+   CONVERSATIONS  (unchanged from previous version)
+   ========================================================= */
+function renderConversations() {
+  const list = document.getElementById('conv-list');
+  const search = (document.getElementById('conv-search').value || '').toLowerCase();
+  const filtered = state.conversations.filter(c => {
+    const ch = convChannel(c);
+    if (state.filter === 'unread' && !c.unread) return false;
+    if (state.channelTypeFilter && (!ch || ch.type !== state.channelTypeFilter)) return false;
+    if (state.channelIdFilter   && (!ch || ch.id   !== state.channelIdFilter))   return false;
+    if (search && !c.name.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  list.innerHTML = filtered.map((c, i) => {
+    const ch = convChannel(c);
+    const typeIcon = ch ? (CHANNEL_TYPES[ch.type]?.icon || '') : '';
+    const last = c.messages[c.messages.length - 1];
+    const preview = last?.dir === 'sys' ? '— system —'
+                  : last?.type === 'image' ? '📷 Photo'
+                  : last?.type === 'file'  ? '📎 ' + (last.text || 'File')
+                  : last?.text || '';
+    const colorClass = 'c' + ((i % 6) + 1);
+    return `
+      <div class="mf-conv-row ${c.id === state.activeConvId ? 'is-active' : ''}" onclick="selectConversation('${c.id}')">
+        <div class="mf-avatar ${colorClass}">${initials(c.name)}</div>
+        <div class="mf-conv-body">
+          <div class="mf-conv-top">
+            <div class="mf-conv-name">${typeIcon} ${escapeHtml(c.name)}</div>
+            <div class="mf-conv-time">${formatTime(c.lastTime)}</div>
+          </div>
+          <div class="mf-conv-preview">
+            <span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(preview)}</span>
+            ${c.unread ? `<span class="mf-unread-badge">${c.unread}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }).join('') || `<div class="mf-conv-empty" style="height:200px;"><div>No conversations match.</div></div>`;
+
+  renderActiveChat();
+  refreshUtilityBadge();
+}
+
+function selectConversation(id) {
+  state.activeConvId = id;
+  const c = state.conversations.find(x => x.id === id);
+  if (c) c.unread = 0;
+  renderConversations();
+}
+
+function renderActiveChat() {
+  const pane = document.getElementById('chat-pane');
+  const c = state.conversations.find(x => x.id === state.activeConvId);
+  if (!c) {
+    pane.innerHTML = `
+      <div class="mf-conv-empty">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+        <div style="font-weight:600; color:#444;">No conversation selected</div>
+        <div style="font-size:13px;">Pick a conversation from the list to view messages.</div>
+      </div>`;
+    return;
+  }
+
+  pane.innerHTML = `
+    <header class="mf-chat-header">
+      <div class="mf-avatar">${initials(c.name)}</div>
+      <div class="mf-chat-header-meta">
+        <div class="mf-chat-header-name">
+          ${escapeHtml(c.name)}
+          ${(() => {
+            const ch = convChannel(c);
+            return ch ? `<span class="mf-source-badge">${CHANNEL_TYPES[ch.type]?.icon || ''} via ${escapeHtml(ch.name)}</span>` : '';
+          })()}
+        </div>
+        <div class="mf-chat-header-status">${c.online ? '● online' : 'last seen recently'}</div>
+      </div>
+      <span class="mf-link-pill">🔗 Linked to Lead: ${escapeHtml(c.name)}</span>
+    </header>
+
+    <div class="mf-msg-area" id="msg-area">
+      ${c.messages.map(renderMessage).join('')}
+    </div>
+
+    <div class="mf-typing" id="typing-indicator" style="display:none;">
+      ${escapeHtml(c.name)} is typing<span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+
+    <div class="mf-composer">
+      <button class="slds-button slds-button_icon slds-button_icon-border" title="Attach">📎</button>
+      <button class="slds-button slds-button_icon slds-button_icon-border" title="Emoji">😊</button>
+      <textarea id="composer-input" placeholder="Type a message..." rows="1"
+                onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+      <button class="slds-button slds-button_brand" onclick="sendMessage()">Send</button>
+    </div>`;
+  scrollMsgsToBottom();
+}
+
+function renderMessage(m) {
+  if (m.dir === 'sys') return `<div class="mf-sys-msg"><span>${escapeHtml(m.text)}</span></div>`;
+  const isOut = m.dir === 'out';
+  let inner = '';
+  if (m.type === 'image') {
+    inner = `<div class="mf-img-placeholder">🖼️ Image</div><div>${escapeHtml(m.text || '')}</div>`;
+  } else if (m.type === 'file') {
+    inner = `
+      <div class="mf-attach-card">
+        <div class="mf-attach-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg></div>
+        <div><div style="font-weight:600; font-size:12px;">${escapeHtml(m.text)}</div><div style="font-size:11px; opacity:.7;">PDF · 248 KB</div></div>
+      </div>`;
+  } else {
+    inner = escapeHtml(m.text);
+  }
+  return `
+    <div class="mf-msg-row ${isOut ? 'is-out' : ''}">
+      <div class="mf-bubble ${isOut ? 'is-out' : 'is-in'}">
+        ${inner}
+        <div class="mf-bubble-meta">
+          <span>${escapeHtml(m.time || '')}</span>
+          ${isOut ? `<span>${m.read ? '✓✓' : '✓'}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+function scrollMsgsToBottom() {
+  const area = document.getElementById('msg-area');
+  if (area) area.scrollTop = area.scrollHeight;
+}
+
+function sendMessage() {
+  const input = document.getElementById('composer-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const c = state.conversations.find(x => x.id === state.activeConvId);
+  c.messages.push({
+    id: Date.now(), dir:'out', type:'text', text,
+    time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
+    read: false,
+  });
+  input.value = '';
+  renderActiveChat();
+  setTimeout(() => { const t = document.getElementById('typing-indicator'); if (t) t.style.display = 'block'; }, 500);
+  setTimeout(() => {
+    const t = document.getElementById('typing-indicator'); if (t) t.style.display = 'none';
+    const last = c.messages[c.messages.length - 1];
+    if (last && last.dir === 'out') last.read = true;
+    renderActiveChat();
+  }, 2200);
+}
+
+document.querySelectorAll('[data-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.filter = btn.dataset.filter;
+    document.querySelectorAll('[data-filter]').forEach(b => {
+      b.classList.toggle('slds-button_outline-brand', b === btn);
+      b.classList.toggle('slds-button_neutral',       b !== btn);
+    });
+    renderConversations();
+  });
+});
+document.getElementById('conv-search').addEventListener('input', renderConversations);
+
+/* =========================================================
+   TOASTS
+   ========================================================= */
+function toast(variant, message) {
+  const stack = document.getElementById('toast-stack');
+  const el = document.createElement('div');
+  el.className = 'slds-notify_container';
+  el.innerHTML = `
+    <div class="slds-notify slds-notify_toast slds-theme_${variant === 'error' ? 'error' : 'success'}" role="status">
+      <div class="slds-notify__content">
+        <h2 class="slds-text-heading_small">${escapeHtml(message)}</h2>
+      </div>
+    </div>`;
+  stack.appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, 2700);
+  setTimeout(() => el.remove(), 3000);
+}
+
+/* =========================================================
+   Utils
+   ========================================================= */
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, m =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function initials(name) {
+  return name.split(/\s+/).map(p => p[0]).slice(0,2).join('').toUpperCase();
+}
+function formatTime(d) {
+  const diff = (Date.now() - d.getTime()) / 60000;
+  if (diff < 60)   return Math.max(1, Math.floor(diff)) + 'm';
+  if (diff < 1440) return Math.floor(diff/60) + 'h';
+  if (diff < 2880) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday:'short' });
+}
+
+/* =========================================================
+   CHANNEL FILTER (top of conversations list)
+   ========================================================= */
+function renderChannelFilterDropdown() {
+  const select = document.getElementById('cf-channel-select');
+  // Show only channels matching the active type filter (or all if no type)
+  const eligible = state.channels.filter(ch =>
+    !state.channelTypeFilter || ch.type === state.channelTypeFilter);
+  const opts = ['<option value="">All channels</option>']
+    .concat(eligible.map(ch => {
+      const t = CHANNEL_TYPES[ch.type] || { icon:'•' };
+      return `<option value="${ch.id}" ${ch.id === state.channelIdFilter ? 'selected' : ''}>${t.icon} ${escapeHtml(ch.name)}</option>`;
+    }));
+  select.innerHTML = opts.join('');
+}
+
+document.querySelectorAll('#cf-type-row .mf-cf-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.channelTypeFilter = btn.dataset.ctype;
+    state.channelIdFilter = '';                         // reset specific channel
+    document.querySelectorAll('#cf-type-row .mf-cf-chip').forEach(b =>
+      b.classList.toggle('is-active', b === btn));
+    renderChannelFilterDropdown();
+    renderConversations();
+  });
+});
+document.getElementById('cf-channel-select').addEventListener('change', e => {
+  state.channelIdFilter = e.target.value;
+  renderConversations();
+});
+
+/* =========================================================
+   LEAD PAGE — embedded chat with channel switcher
+   ========================================================= */
+function renderLeadChat() {
+  // Tabs: one per channel the lead has been contacted on
+  const tabs = state.leadChannels.map(chId => {
+    const ch = state.channels.find(c => c.id === chId);
+    if (!ch) return '';
+    const t = CHANNEL_TYPES[ch.type] || { icon:'•', label:ch.type };
+    const isActive = chId === state.leadActiveChannel;
+    const thread = state.leadThreads[chId] || [];
+    const unread = thread.filter(m => m.dir === 'in' && !m.seen).length;
+    return `
+      <button class="${isActive ? 'is-active' : ''}" onclick="setLeadChannel('${chId}')">
+        ${t.icon} ${escapeHtml(t.label)}
+        ${unread ? `<span class="badge">${unread}</span>` : ''}
+      </button>`;
+  }).join('');
+  document.getElementById('lead-chat-tabs').innerHTML = tabs;
+
+  // Thread + composer
+  const ch = state.channels.find(c => c.id === state.leadActiveChannel);
+  const thread = state.leadThreads[state.leadActiveChannel] || [];
+  document.getElementById('lead-chat-pane').innerHTML = `
+    <div class="mf-msg-area" id="lead-msg-area">
+      ${thread.map(renderMessage).join('') || '<div class="mf-conv-empty"><div>No messages on this channel yet.</div></div>'}
+    </div>
+    <div class="mf-composer">
+      <button class="slds-button slds-button_icon slds-button_icon-border" title="Attach">📎</button>
+      <button class="slds-button slds-button_icon slds-button_icon-border" title="Emoji">😊</button>
+      <textarea id="lead-composer-input" rows="1"
+                placeholder="Reply via ${ch ? escapeHtml(ch.name) : 'channel'}..."
+                onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendLeadMessage();}"></textarea>
+      <button class="slds-button slds-button_brand" onclick="sendLeadMessage()">Send</button>
+    </div>`;
+  const area = document.getElementById('lead-msg-area');
+  if (area) area.scrollTop = area.scrollHeight;
+}
+
+function setLeadChannel(chId) {
+  state.leadActiveChannel = chId;
+  renderLeadChat();
+}
+
+function sendLeadMessage() {
+  const input = document.getElementById('lead-composer-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const thread = state.leadThreads[state.leadActiveChannel] || [];
+  thread.push({
+    id: Date.now(), dir:'out', type:'text', text,
+    time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
+    read: false,
+  });
+  state.leadThreads[state.leadActiveChannel] = thread;
+  renderLeadChat();
+  // Simulate read receipt
+  setTimeout(() => {
+    const last = thread[thread.length - 1];
+    if (last && last.dir === 'out') last.read = true;
+    renderLeadChat();
+  }, 1500);
+}
+
+/* =========================================================
+   UTILITY BAR — bottom popup with unread chats
+   ========================================================= */
+function toggleUtilPopup() {
+  state.utilOpen = !state.utilOpen;
+  document.getElementById('util-popup').classList.toggle('is-open', state.utilOpen);
+  document.getElementById('util-btn-messages').classList.toggle('is-open', state.utilOpen);
+  if (state.utilOpen) renderUtilPopup();
+}
+
+function setUtilTab(tab) {
+  state.utilTab = tab;
+  document.querySelectorAll('#util-popup-tabs button').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.uptab === tab));
+  renderUtilPopup();
+}
+
+function renderUtilPopup() {
+  const body = document.getElementById('util-popup-body');
+  let rows;
+  if (state.utilTab === 'new') {
+    rows = state.conversations.filter(c => c.unread > 0);
+  } else if (state.utilTab === 'live') {
+    rows = state.conversations.filter(c => {
+      const last = c.messages[c.messages.length - 1];
+      return last && last.dir === 'out';
+    });
+  } else {
+    rows = state.conversations.filter(c => {
+      const last = c.messages[c.messages.length - 1];
+      return last && last.dir === 'in';
+    });
+  }
+
+  if (rows.length === 0) {
+    body.innerHTML = `<div class="mf-util-popup-empty">No chats in this view.</div>`;
+    return;
+  }
+
+  body.innerHTML = rows.map((c, i) => {
+    const ch = convChannel(c);
+    const t = ch ? CHANNEL_TYPES[ch.type] : null;
+    const last = c.messages[c.messages.length - 1];
+    const preview = last?.type === 'image' ? '📷 Photo'
+                  : last?.type === 'file'  ? '📎 ' + (last.text || 'File')
+                  : last?.text || '';
+    const colorClass = 'c' + ((i % 6) + 1);
+    return `
+      <div class="mf-util-row">
+        <div class="mf-avatar ${colorClass}">${initials(c.name)}</div>
+        <div class="mf-util-meta-col">
+          <div class="mf-util-name">
+            <span>${escapeHtml(c.name)}</span>
+            ${c.unread ? `<span class="mf-unread-badge">${c.unread}</span>` : ''}
+          </div>
+          <div class="mf-util-channel">${t ? t.icon + ' ' + escapeHtml(ch.name) : ''}</div>
+          <div class="mf-util-preview">${escapeHtml(preview)}</div>
+          <div class="mf-util-actions">
+            <button onclick="utilOpenChat('${c.id}')">Open chat</button>
+            <button onclick="utilOpenLead('${c.id}')">Open lead</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('') + `
+    <div class="mf-util-quick-reply">
+      <input id="util-quick-input" placeholder="Quick reply to first chat..." />
+      <button onclick="utilQuickSend()">Send</button>
+    </div>`;
+}
+
+function utilOpenChat(convId) {
+  state.activeConvId = convId;
+  const c = state.conversations.find(x => x.id === convId);
+  if (c) c.unread = 0;
+  setTab('conversations');
+  toggleUtilPopup();
+}
+
+function utilOpenLead(convId) {
+  // Demo: all leads route to the same Maria Constantinou record
+  toast('success', 'Navigated to linked Lead');
+  setTab('lead');
+  toggleUtilPopup();
+}
+
+function utilQuickSend() {
+  const input = document.getElementById('util-quick-input');
+  const text = input.value.trim();
+  if (!text) return;
+  // Send to the first row in the current view
+  const target = (state.utilTab === 'new'
+    ? state.conversations.filter(c => c.unread > 0)
+    : state.conversations)[0];
+  if (!target) return;
+  target.messages.push({
+    id: Date.now(), dir:'out', type:'text', text,
+    time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
+    read: false,
+  });
+  target.unread = 0;
+  toast('success', `Reply sent to ${target.name}`);
+  renderUtilPopup();
+  refreshUtilityBadge();
+  if (state.activeTab === 'conversations') renderConversations();
+}
+
+function refreshUtilityBadge() {
+  const total = state.conversations.reduce((sum, c) => sum + (c.unread || 0), 0);
+  const badge = document.getElementById('util-badge');
+  badge.textContent = total;
+  badge.style.display = total > 0 ? '' : 'none';
+  document.getElementById('up-count-new').textContent = total ? `(${total})` : '';
+}
+
+document.querySelectorAll('#util-popup-tabs button').forEach(b =>
+  b.addEventListener('click', () => setUtilTab(b.dataset.uptab)));
+
+/* =========================================================
+   BOOT
+   ========================================================= */
+renderChannels();
+renderChannelFilterDropdown();
+renderConversations();
+refreshUtilityBadge();
+</script>
+</body>
+</html>
