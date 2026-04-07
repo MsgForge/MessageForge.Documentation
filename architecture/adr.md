@@ -23,6 +23,7 @@
 | **ADR-19** | Data Flow Routing Matrix — clear API assignment per data flow | Eliminates overlap between ADR-7 (hybrid ingestion) and ADR-8 (Pub/Sub API). See routing table below. |
 | **ADR-20** | Salesforce ContentVersion for all media (supersedes ADR-3, ADR-14) | R2 eliminated. ContentVersion is simpler, avoids external infrastructure, sufficient for MVP file storage needs. Media accessed via `/sfc/servlet.shepherd/` URLs with session-based auth. |
 | **ADR-21** | Platform Events (empApi) for real-time UI (supersedes ADR-4, ADR-13) | Centrifugo eliminated. No AppExchange competitor uses external WebSocket. Platform Events via empApi are sufficient for MVP scale. |
+| **ADR-22** | FLS-resilient channel status resolution in LWC | `stripInaccessible` silently strips fields → breaks client-side filtering. Fix: server-side fallback via `getChannelStatus()` + `Session_Status__c`. |
 
 ---
 
@@ -155,3 +156,33 @@ Go Middleware --Platform Event--> Salesforce Event Bus --empApi/CometD--> LWC (b
 **Alternatives rejected:**
 - Keep Centrifugo for MVP: Over-engineering. Adds 3+ weeks of work for imperceptible UX benefit at MVP scale
 - Polling only (no Platform Events): Heymarket proves polling works, but empApi is trivial to implement and provides genuine push semantics
+
+---
+
+## ADR-22: FLS-Resilient Channel Status Resolution in LWC
+
+**Status:** Accepted
+**Date:** 2026-04-06
+**Context:** The Messenger Console LWC (`messengerChat`) showed "Disconnected" even after successful channel activation. Root cause: `getChannels()` uses `Security.stripInaccessible()` which silently removes fields the running user lacks FLS access to. When `Active__c` (a non-required Checkbox) is stripped, the JS filter `ch.Active__c && ch.Status__c === 'active'` evaluates to `false` for every channel, and the fallback path hardcodes `connectionStatus = 'offline'`.
+
+Meanwhile, `getChannelStatus()` queries directly without `stripInaccessible`, always seeing real field values — but it was never called on the fallback path.
+
+Two architectural tensions:
+1. **AppExchange requires FLS enforcement** — `stripInaccessible` is mandatory for methods returning SObjects to LWC. Removing it fails security review.
+2. **Silent stripping breaks client-side filtering** — LWC code cannot distinguish "field is false" from "field was stripped" (both appear as falsy `undefined`).
+
+**Decision:** Keep `stripInaccessible` in `getChannels()` (AppExchange compliance). Make `autoSelectChannel()` FLS-resilient by always falling back to `loadChannelStatus()` when the strict filter finds no matches. `getChannelStatus()` returns a status string (not SObjects), so it does not require `stripInaccessible` and always resolves the true channel state. Additionally, `getChannelStatus()` now prefers `Session_Status__c` (real-time state from Go middleware) over the `Status__c` lifecycle field.
+
+**Pattern rule:** Any LWC method that filters SObject data client-side after `stripInaccessible` must have a server-side fallback path that resolves the same logic without FLS dependency. Never hardcode a status when a server query can determine it.
+
+**Consequences:**
+- `autoSelectChannel()` works correctly regardless of FLS grants
+- `getChannelStatus()` returns richer status (online/offline/connecting/auth_required/etc.) via `Session_Status__c`
+- No `stripInaccessible` removal — AppExchange compliance preserved
+- Permission set (`Messenger_Admin`) still required for full field visibility in list views and reports
+- Client-side filtering in `autoSelectChannel()` remains a fast-path optimization, not the source of truth
+
+**Alternatives rejected:**
+- Remove `stripInaccessible` from `getChannels()`: Fails AppExchange security review
+- Replace with `WITH SECURITY_ENFORCED`: Throws exception instead of degrading gracefully — worse UX
+- Add `Active__c` to all profiles: Not possible in managed packages — customer controls profile FLS
